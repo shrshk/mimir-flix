@@ -30,7 +30,9 @@ No domain of your own is needed. Phones (and other computers) open mimir-flix at
 `https://<this Mac's Tailscale name>:8726`: Tailscale's own certificate, your tailnet only, never public (`tailscale
 serve`, turned on from Setup or Settings, which show the link and a QR code to scan). The TV has no Tailscale, so it
 opens mimir-flix at this Mac's home address (`http://192.168.1.x:8723`), which the TV app asks for once. A domain of
-your own is the optional, advanced way (below).
+your own is the optional, advanced way (below). Without one, a provider's videos added to Jellyfin play in Jellyfin's
+apps at home (they open the resolver at the home address); away from home, play them in mimir-flix, or let the
+tailnet reach the home network (Tailscale subnet route).
 
 Settings go to `~/.config/mimir-flix/settings.json`; passwords never do. Setup locks once done; after that the
 Settings page (`/settings`, ⚙ in the header) shows what works with the fix for what does not, and changes anything,
