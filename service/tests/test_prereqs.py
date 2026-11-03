@@ -4,13 +4,16 @@ import time
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from jobkit import prereqs as shared
+
 from mimir_flix import prereqs
 
 
 def setup(monkeypatch, have: set[str]):
     """A Mac with only `have` on it (brew, uv); Jellyfin not answering; Tailscale connected."""
-    monkeypatch.setattr(prereqs, "which", lambda name: f"/opt/homebrew/bin/{name}" if name in have else None)
-    monkeypatch.setattr(prereqs, "check_tailscale", lambda: (True, "connected"))
+    monkeypatch.setattr(shared, "which", lambda name: f"/opt/homebrew/bin/{name}" if name in have else None)
+    monkeypatch.setattr(shared, "tailscale_cli", lambda: "/opt/homebrew/bin/tailscale")
+    monkeypatch.setattr(shared, "tailscale_status", lambda: {"BackendState": "Running"})
     ran = []
 
     def runner(cmd):
@@ -36,7 +39,8 @@ def wait_done(c, key):
 def test_lists_what_is_missing_and_installs_only_on_a_yes_from_the_mac(monkeypatch):
     c, ran = setup(monkeypatch, {"brew"})
     parts = {p["key"]: p for p in c.get("/api/prereqs").json()["parts"]}
-    assert [k for k, p in parts.items() if not p["ok"]] == ["uv", "jellyfin"]
+    assert [k for k, p in parts.items() if not p["ok"]] == ["uv", "jellyfin", "rclone"]
+    assert parts["rclone"]["optional"] and parts["tailscale"]["optional"]
     assert parts["uv"]["install"] == "brew install uv" and parts["brew"]["link"] == "https://brew.sh"
     assert ran == []  # looking installs nothing
 

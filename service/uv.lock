@@ -313,7 +313,7 @@ wheels = [
 [[package]]
 name = "jobkit"
 version = "0.1.0"
-source = { git = "https://github.com/shrshk/jobkit#98fd57b7f7d88467bbd9912165bdc0a9b2352958" }
+source = { git = "https://github.com/shrshk/jobkit#af3bc4141561354aa52dd8827df61318a3f23677" }
 
 [[package]]
 name = "mimir-flix"
