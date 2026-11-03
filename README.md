@@ -23,7 +23,14 @@ Jellyfin:
 1. Jellyfin: finishes its first-run wizard if needed (the admin user), turns on the Mac's hardware video
    (VideoToolbox) and makes mimir-flix's Jellyfin API key (`~/.config/mimir-flix/jellyfin-api-key`, 600);
 2. your media (libraries on the Library page), your streaming apps (a TMDB token in
-   `~/.config/mimir-flix/tmdb-token`, 600), the TV (and Kodi), and how phones reach a provider's links.
+   `~/.config/mimir-flix/tmdb-token`, 600), the TV (and Kodi), how phones and the TV reach mimir-flix, and the
+   nightly backup (optionally copied off-site, encrypted).
+
+No domain of your own is needed. Phones (and other computers) open mimir-flix at
+`https://<this Mac's Tailscale name>:8726`: Tailscale's own certificate, your tailnet only, never public (`tailscale
+serve`, turned on from Setup or Settings, which show the link and a QR code to scan). The TV has no Tailscale, so it
+opens mimir-flix at this Mac's home address (`http://192.168.1.x:8723`), which the TV app asks for once. A domain of
+your own is the optional, advanced way (below).
 
 Settings go to `~/.config/mimir-flix/settings.json`; passwords never do. Setup locks once done; after that the
 Settings page (`/settings`, ⚙ in the header) shows what works with the fix for what does not, and changes anything,
@@ -151,7 +158,7 @@ address, which https players refuse, is relayed over the resolver's own address.
 Tailscale address, 100.64.0.0/10) gets everything streamed by this Mac rather than the provider's servers. Only
 stream servers a provider handed out are relayed.
 
-### The https front door (optional)
+### Your own domain (optional, advanced)
 
 Safari, Swiftfin's native player and Jellyfin's web app on https need https links, and a Home Screen install
 needs https too. One way: Caddy on this Mac with a wildcard certificate (DNS challenge), names pointing at the
@@ -179,7 +186,8 @@ Runs natively on purpose: on a Mac, Jellyfin in Docker loses hardware video, and
 
 mimir-flix is for one household's devices. It is not built to face the internet.
 
-- The app listens on `127.0.0.1` by default. Reach it from other devices through Caddy, with only Tailscale
+- The app listens on `127.0.0.1` by default. Phones reach it through `tailscale serve` (your tailnet only); with
+  "on the home network" ticked it also listens there over plain http, for the TV. Or reach it through Caddy, with only Tailscale
   addresses let in (above). Don't port-forward it or put it behind a public tunnel.
 - Every device on your tailnet counts as yours, including any shared in from someone else's tailnet: limit who
   reaches this Mac with Tailscale's access rules (ACLs) if you share devices.
