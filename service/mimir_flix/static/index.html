@@ -1,0 +1,1072 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>mimir-flix</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="mimir-flix">
+<meta name="theme-color" content="#000000">
+<style>
+  /* Two themes (D11): Cinema (these values, the default) and Doodle (html[data-theme="doodle"], at the end). */
+  :root { --bg:#000; --card:#181818; --card2:#2a2a2a; --ink:#fff; --mute:#a3a3a3; --line:#2f2f2f; --accent:#e50914; --ok:#46d369; --warn:#f5a623;
+          --tabbar:56px; --poster:112px; }
+  @media (min-width:700px) { :root { --poster:150px; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { background:var(--bg); }
+  body { margin:0; font:15px/1.45 -apple-system, "Helvetica Neue", system-ui, sans-serif; background:var(--bg); color:var(--ink); overscroll-behavior-y:none; }
+  a { color:inherit; }
+
+  /* Header: logo, top tabs (wide screens), search */
+  header { position:sticky; top:0; z-index:3; display:flex; align-items:center; gap:18px; padding:10px 16px;
+           padding-top:calc(env(safe-area-inset-top) + 10px); background:#000; }  /* solid: iOS draws text under a backdrop blur at low resolution until a scroll */
+  #logo { font-weight:900; font-size:22px; letter-spacing:1px; color:var(--accent); text-decoration:none; text-transform:uppercase; line-height:1; }
+  #logo span { color:var(--ink); }
+  .topnav { display:none; gap:4px; }
+  .topnav button { border:0; background:none; color:var(--mute); font-size:15px; padding:6px 8px; }
+  .topnav button.on { color:var(--ink); font-weight:700; }
+  .icon { border:0; background:none; color:var(--ink); padding:6px; display:inline-flex; align-items:center; }
+  .icon svg { width:22px; height:22px; }
+  .vote.on { background:var(--ink); color:#000; }
+  #tosend { color:var(--mute); font-size:13px; text-decoration:none; white-space:nowrap; }
+  #jfl { color:var(--mute); font-size:13px; text-decoration:none; white-space:nowrap; }
+  @media (min-width:700px) { .topnav { display:flex; } }
+
+  /* Bottom tab bar (phones) */
+  .tabbar { position:fixed; left:0; right:0; bottom:0; z-index:3; display:flex; justify-content:space-around; background:#0b0b0b; border-top:1px solid #1f1f1f;
+            padding-bottom:env(safe-area-inset-bottom); }
+  .tabbar button { flex:1; border:0; background:none; color:var(--mute); font-size:11px; padding:7px 0 6px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .tabbar button svg { width:22px; height:22px; }
+  .tabbar button.on { color:var(--ink); }
+  @media (min-width:700px) { .tabbar { display:none; } }
+
+  main { max-width:1400px; margin:0 auto; padding:4px 0 calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px); }
+  @media (min-width:700px) { main { padding-bottom:40px; } }
+  section { padding:0 16px; }
+  @media (min-width:700px) { section { padding:0 32px; } }
+
+  /* Search */
+  #searchbar { position:sticky; top:var(--headh, calc(58px + env(safe-area-inset-top))); z-index:2; background:var(--bg); padding:6px 0 10px; }
+  #sugg { margin-top:8px; } #sugg:empty { display:none; }
+  #searchbar input { font-size:16px; padding:11px 14px 11px 38px; border-radius:6px; border:0; background:#2a2a2a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 11px center / 18px no-repeat; color:var(--ink); width:100%; }
+  #idx { font-size:12px; color:var(--mute); margin-top:6px; } #idx:empty { display:none; }
+
+  /* Page title with a back arrow (inside a section or show) */
+  #pagehead { display:flex; align-items:center; gap:6px; margin:6px 0 10px; } #pagehead[hidden] { display:none; }
+  #pagehead h2 { margin:0; font-size:20px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #back { margin-left:-8px; } #back svg { width:26px; height:26px; }
+  .trail { font-size:12px; color:var(--mute); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .trail a { cursor:pointer; } .trail a:hover { color:var(--ink); }
+
+  /* Grid of posters, rows of posters */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(var(--poster), 1fr)); gap:14px 8px; }
+  .full { grid-column:1/-1; }
+  .rowhead { grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin:14px 0 -6px; }
+  .rowhead h3 { margin:0; font-size:17px; font-weight:700; } .rowhead a { font-size:13px; color:var(--mute); cursor:pointer; white-space:nowrap; }
+  .strip { grid-column:1/-1; display:grid; grid-auto-flow:column; grid-auto-columns:var(--poster); gap:8px; overflow-x:auto; margin:0 -16px; padding:0 16px 4px;
+           scroll-snap-type:x mandatory; scroll-padding:0 16px; scrollbar-width:none; }
+  .strip::-webkit-scrollbar { display:none; }
+  @media (min-width:700px) { .strip { margin:0 -32px; padding:0 32px 4px; scroll-padding:0 32px; } }
+  .strip .tile { scroll-snap-align:start; }
+  .group { grid-column:1/-1; margin:14px 0 -4px; font-size:15px; font-weight:700; }
+  .recent h3 { margin:6px 0; font-size:15px; } .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .chip { background:#2a2a2a; border-radius:16px; padding:7px 14px; font-weight:500; font-size:14px; }
+  .chip.on { background:var(--ink); color:var(--bg); }
+  .recbar { margin:4px 0 6px; } .recsel { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; } .recsel select { width:auto; max-width:46%; }
+  .tile { cursor:pointer; display:flex; flex-direction:column; min-width:0; }
+  .tile .art { position:relative; aspect-ratio:2/3; border-radius:6px; overflow:hidden; background:linear-gradient(160deg, #2b2b2b, #151515);
+               display:flex; align-items:flex-end; padding:8px; transition:transform .15s; }
+  .tile .art .ph { font-weight:800; font-size:14px; line-height:1.15; color:#ffffffd0; overflow-wrap:anywhere; }
+  .tile .art img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .tile .art .in { position:absolute; top:6px; left:6px; z-index:1; font-size:11px; font-weight:700; background:#000b; color:var(--ok); border-radius:4px; padding:1px 6px; }
+  .ep .acts { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .tile .art .apps { position:absolute; bottom:6px; left:6px; right:6px; z-index:1; display:flex; flex-wrap:wrap; gap:3px; }
+  .tile .art .apps b { font-size:10px; font-weight:800; color:#fff; background:#000c; border-radius:4px; padding:1px 5px; }
+  .tile .art .apps b.netflix { background:#e50914; } .tile .art .apps b.prime { background:#00a8e1; }
+  .tile .art .apps b.peacock { background:#111; border:1px solid #fff4; } .tile .art .apps b.youtube { background:#f00; }
+  .tile .art .apps b.espn { background:#c00; } .tile .art .apps b.prov { background:#f28c28; color:#1a1208; } .tile .art .apps b.sling { background:#0072ce; }
+  .tile .art .new { position:absolute; top:6px; right:6px; z-index:1; font-size:11px; font-weight:700; background:var(--accent); color:#fff; border-radius:4px; padding:1px 6px; }
+  .tile .rm { position:absolute; bottom:6px; right:6px; z-index:1; width:28px; height:28px; padding:0; border-radius:50%; background:#000b; color:#fff; font-size:13px; display:flex; align-items:center; justify-content:center; }
+  .tile .art .folder { position:absolute; top:6px; right:6px; font-size:11px; background:#000a; color:#fff; border-radius:4px; padding:1px 6px; }
+  .tile:active .art { transform:scale(.97); } @media (hover:hover) { .tile:hover .art { transform:scale(1.04); } }
+  .tile .bar2 { height:3px; background:var(--accent); margin-top:-3px; position:relative; border-radius:0 0 0 6px; }
+  .tile .t { margin-top:6px; font-size:12px; font-weight:600; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .tile .s { font-size:11px; color:var(--mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .skel { grid-column:1/-1; display:grid; grid-auto-flow:column; grid-auto-columns:var(--poster); gap:8px; overflow:hidden; }
+  .skel i { aspect-ratio:2/3; border-radius:6px; background:linear-gradient(90deg, #1a1a1a, #262626, #1a1a1a); background-size:200% 100%; animation:sh 1.2s infinite; }
+  @keyframes sh { to { background-position:-200% 0; } }
+
+  /* Featured title on Home */
+  .hero { grid-column:1/-1; position:relative; margin:0 -16px 6px; min-height:min(62vh, 520px); display:flex; align-items:flex-end; justify-content:center; overflow:hidden; }
+  @media (min-width:700px) { .hero { margin:0 -32px 6px; justify-content:flex-start; } }
+  .hero picture { position:absolute; inset:0; }
+  /* A provider's rows, opened under its fold: nested in one block (a line down its left side, smaller headings) under
+     the provider's header that stays pinned below the top bar while its rows scroll by. */
+  .rowhead.sub h3 { font-size:15px; font-weight:600; color:var(--mute); }
+  html[data-theme="doodle"] .rowhead.sub h3 { font-size:22px; text-decoration:none; color:var(--mute); }
+  .fold { position:sticky; top:var(--headh, calc(58px + env(safe-area-inset-top))); z-index:2; background:var(--bg); grid-column:1/-1; display:flex; align-items:baseline; gap:12px; margin:22px 0 4px; padding:10px 0; border:0; border-top:1px solid var(--line);
+          color:var(--ink); font:inherit; font-size:20px; font-weight:800; text-align:left; cursor:pointer; }
+  .fold span { font-size:13px; font-weight:600; color:var(--mute); }
+  .fold::after { content:"▾"; margin-left:auto; color:var(--mute); transition:transform .2s; }
+  .fold[aria-expanded="false"]::after { transform:rotate(-90deg); }
+  .fold { margin-left:-16px; margin-right:-16px; padding-left:16px; padding-right:16px; border-radius:0; }  /* pinned: edge to edge */
+  @media (min-width:700px) { .fold { margin-left:-32px; margin-right:-32px; padding-left:32px; padding-right:32px; } }
+  .foldbody { grid-column:1/-1; display:block; border-left:3px solid var(--line); padding-left:12px; margin-left:2px; }
+  .foldbody .strip { margin:0 -16px 0 0; padding:0 16px 4px 0; }
+  @media (min-width:700px) { .foldbody .strip { margin:0 -32px 0 0; padding:0 32px 4px 0; } }
+  .foldbody .rowhead { margin:14px 0 6px; }
+  html[data-theme="doodle"] .foldbody { border-left:2px dashed var(--line); }
+  .foldbody[hidden] { display:none !important; }
+  .hero img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 20%; }
+  .hero::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg, #0000 30%, #000c 75%, #000 100%); }
+  .hero .in { position:relative; z-index:1; padding:0 20px 18px; text-align:center; max-width:640px; }
+  @media (min-width:700px) { .hero .in { text-align:left; padding:0 32px 28px; } }
+  .hero h2 { margin:0 0 4px; font-size:clamp(26px, 7vw, 44px); font-weight:900; line-height:1.05; text-shadow:0 2px 12px #000; }
+  .hero .s { color:#ddd; font-size:13px; margin-bottom:12px; }
+  .hero .row { justify-content:center; } @media (min-width:700px) { .hero .row { justify-content:flex-start; } }
+
+  /* Buttons */
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; min-width:0; }
+  .mute { color:var(--mute); font-size:13px; }
+  h2 { margin:0; font-size:17px; }
+  button { font:inherit; padding:8px 14px; border-radius:6px; border:0; background:var(--card2); color:var(--ink); cursor:pointer; font-weight:600; }
+  button:active { opacity:.8; }
+  button.p, a.btn { background:#fff; color:#000; font-weight:700; }
+  a.btn { font-size:inherit; padding:8px 14px; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; }
+  button.alt, a.alt { border:0; background:none; color:var(--mute); padding:8px 6px; font-size:13px; font-weight:500; text-decoration:none; }
+  button.x { border:0; background:none; color:var(--mute); padding:2px 6px; font-weight:400; }
+  .big button, .big a.btn { padding:11px 18px; font-size:15px; }
+  .sheet .acts button.p, .sheet .acts a.btn, .sheet .acts > button:not(.alt) { flex:1 1 100%; justify-content:center; padding:12px; font-size:16px; }
+
+  /* Show page and episodes */
+  .showbar { grid-column:1/-1; display:flex; flex-direction:column; gap:10px; margin:0 0 6px; }
+  .showbar .mute { font-size:14px; color:#ccc; }
+  .eps { display:flex; flex-direction:column; grid-column:1/-1; }
+  .ep { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid #1f1f1f; }
+  .ep .grow { font-size:15px; font-weight:600; flex:1 1 100%; }
+  .ep .grow .mute { font-weight:400; }
+  .ep button, .ep a.btn { padding:6px 12px; font-size:14px; }
+  @media (min-width:700px) { .ep .grow { flex:1 1 0; } }
+
+  /* Sheets, dialogs, toast */
+  dialog { border:0; border-radius:12px; background:var(--card); color:var(--ink); width:min(620px, 94vw); padding:18px; }
+  dialog::backdrop { background:#000b; }
+  dialog.sheet { padding:0; overflow:hidden; }
+  @media (max-width:699px) {
+    dialog { margin:auto 0 0; width:100vw; max-width:100vw; border-radius:14px 14px 0 0; padding-bottom:calc(18px + env(safe-area-inset-bottom)); max-height:88vh; }
+    dialog.sheet { padding-bottom:env(safe-area-inset-bottom); }
+  }
+  .sheet .banner { position:relative; aspect-ratio:16/9; background:#111; overflow:hidden; }
+  .sheet .banner img { width:100%; height:100%; object-fit:cover; object-position:center 25%; }
+  .sheet .banner::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg, #0000 50%, var(--card)); }
+  .sheet .banner .close { position:absolute; top:10px; right:10px; z-index:1; background:#000a; border-radius:50%; width:34px; height:34px; padding:0; justify-content:center; }
+  .sheet .body { padding:4px 18px 18px; }
+  .sheet h2 { font-size:22px; font-weight:800; }
+  .sheet .desc { color:#ccc; font-size:14px; margin:8px 0 0; max-height:30vh; overflow:auto; }
+  .sheet .acts { margin-top:14px; }
+  .grab { width:40px; height:4px; border-radius:2px; background:#555; margin:8px auto 0; } @media (min-width:700px) { .grab { display:none; } }
+  #toast { position:fixed; left:50%; bottom:calc(var(--tabbar) + env(safe-area-inset-bottom) + 14px); transform:translateX(-50%); background:#2a2a2a; color:#fff; border-radius:8px; padding:10px 14px;
+           display:none; z-index:5; max-width:92vw; box-shadow:0 6px 24px #000a; font-size:14px; }
+  @media (min-width:700px) { #toast { bottom:24px; } }
+  #toast a.btn { margin-left:10px; padding:4px 10px; }
+  #player { width:min(960px, 100vw); padding:12px; } #player video { width:100%; max-height:75vh; background:#000; border-radius:8px; margin-top:8px; } #nextup { margin-top:8px; }
+
+  /* Library page */
+  .card { background:var(--card); border-radius:10px; padding:16px; margin-bottom:12px; }
+  .libhead { margin:8px 0 14px; } .libhead h2 { font-size:22px; font-weight:800; }
+  #scan { font-size:13px; color:var(--mute); margin:4px 0 12px; }
+  ul { list-style:none; margin:10px 0 0; padding:0; }
+  li { display:flex; gap:8px; align-items:center; padding:8px 0; border-top:1px solid var(--line); font-size:14px; overflow-wrap:anywhere; flex-wrap:wrap; }
+  li .grow { min-width:0; }
+  .tag { font-size:12px; color:var(--mute); border:1px solid var(--line); border-radius:10px; padding:1px 8px; white-space:nowrap; }
+  .warn { color:var(--warn); } .ok { color:var(--ok); }
+  .bar { height:6px; background:#333; border-radius:3px; overflow:hidden; margin-top:6px; } .bar i { display:block; height:100%; background:var(--accent); transition:width .5s; }
+  input, select { font:inherit; font-size:16px; padding:9px 10px; border:0; border-radius:6px; background:#2a2a2a; color:var(--ink); width:100%; }
+  label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+  .pick { max-height:50vh; overflow:auto; margin-top:8px; }
+  .pick div { display:flex; gap:8px; align-items:center; padding:8px 0; border-top:1px solid var(--line); font-size:14px; }
+  .pick a { color:var(--ink); cursor:pointer; flex:1; overflow-wrap:anywhere; }
+  .err { color:#ff6b6b; font-size:13px; margin-top:8px; }
+
+  /* TV mode (the mimir-flix TV app): the remote moves a visible focus */
+  .tv :focus { outline:none; }
+  .tv button:focus, .tv a:focus, .tv input:focus { box-shadow:0 0 0 3px #fff; }
+  .tv .tile:focus .art { transform:scale(1.08); box-shadow:0 0 0 3px #fff, 0 8px 24px #000c; }
+  .tv .tile:focus .t { color:#fff; }
+  .noprov [data-tab="list"] { display:none; }
+  .tv .topnav { display:flex; } .tv .tabbar, .tv #jfl, .tv #tosend, .tv #tosettings { display:none; }
+
+  /* Doodle theme: Doodle Games' paper, ink and crayons, hand-drawn type, taped posters. Chalkboard (light chalk on
+     slate) in dark mode and on the TV. Chosen per device with the pencil button; Cinema stays the default. */
+  @font-face { font-family:"Caveat"; src:url("/fonts/caveat.woff2") format("woff2"); font-display:swap; }
+  @font-face { font-family:"Patrick Hand"; src:url("/fonts/patrick-hand-400.woff2") format("woff2"); font-display:swap; }
+  html[data-theme="doodle"] { --bg:#eeeae0; --card:#f6f2e8; --card2:#e4ddcc; --ink:#3b2f2a; --mute:#6b5d55; --line:#3b2f2a; --accent:#d9534a; --ok:#4f8a3a; --tape:#e9c24acc; }
+  @media (prefers-color-scheme: dark) {
+    html[data-theme="doodle"] { --bg:#2b3036; --card:#343a41; --card2:#3f464e; --ink:#f1ede3; --mute:#bdb6aa; --line:#e6e1d6; --accent:#f2a65a; --ok:#9fd38a; --tape:#e9c24a88; }
+  }
+  html[data-theme="doodle"].tvmode { --bg:#2b3036; --card:#343a41; --card2:#3f464e; --ink:#f1ede3; --mute:#bdb6aa; --line:#e6e1d6; --accent:#f2a65a; --ok:#9fd38a; --tape:#e9c24a88; }
+  html[data-theme="doodle"] body { font-family:"Patrick Hand", "Comic Sans MS", sans-serif; font-size:17px; }
+  html[data-theme="doodle"] :is(h1, h2, h3, .rowhead h3, .hero h2, .fold) { font-family:Caveat, cursive; font-weight:700; letter-spacing:0; }
+  html[data-theme="doodle"] .rowhead h3 { font-size:27px; text-decoration:underline wavy var(--accent) 2px; text-underline-offset:7px; }
+  html[data-theme="doodle"] #logo { font-family:Caveat, cursive; text-transform:none; letter-spacing:0; font-size:30px; line-height:1.15; color:var(--ink); }
+  html[data-theme="doodle"] #logo span { color:var(--accent); }
+  html[data-theme="doodle"] header { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; border-bottom:2px dashed var(--line); }
+  html[data-theme="doodle"] .tabbar { background:var(--bg); border-top:2px dashed var(--line); backdrop-filter:none; -webkit-backdrop-filter:none; }
+  html[data-theme="doodle"] .tabbar button { font-size:14px; }
+  html[data-theme="doodle"] .tile .art { border:2px solid var(--line); border-radius:3px; background:var(--card2); overflow:visible; }
+  html[data-theme="doodle"] .tile .art img { border-radius:1px; }
+  html[data-theme="doodle"] .tile .art .ph { color:var(--ink); font-family:Caveat, cursive; font-size:19px; }
+  html[data-theme="doodle"] .tile .art::before { content:""; position:absolute; top:-7px; left:34%; width:32%; height:13px; background:var(--tape); transform:rotate(3deg); z-index:2; }
+  html[data-theme="doodle"] .tile:nth-child(3n+1) .art { transform:rotate(-1.2deg); }
+  html[data-theme="doodle"] .tile:nth-child(3n+2) .art { transform:rotate(0.9deg); }
+  html[data-theme="doodle"] .tile .t { font-size:16px; font-weight:400; }
+  html[data-theme="doodle"] .tile .s { font-size:14px; }
+  html[data-theme="doodle"] button { background:transparent; color:var(--ink); border:2px solid var(--line); border-radius:18px 14px 18px 15px; font-weight:400; }
+  html[data-theme="doodle"] button.p, html[data-theme="doodle"] a.btn { background:var(--ink); color:var(--bg); border:2px solid var(--line); border-radius:18px 14px 18px 15px; }
+  html[data-theme="doodle"] .icon, html[data-theme="doodle"] .tabbar button, html[data-theme="doodle"] .topnav button { border:0; background:none; }
+  html[data-theme="doodle"] .chip { background:var(--card); border:2px solid var(--line); }
+  html[data-theme="doodle"] .chip.on { background:var(--ink); color:var(--bg); }
+  html[data-theme="doodle"] input, html[data-theme="doodle"] select, html[data-theme="doodle"] #searchbar input { background-color:var(--card); border:2px solid var(--line); color:var(--ink); }
+  html[data-theme="doodle"] .hero { margin:6px 0 10px; border:2px solid var(--line); border-radius:14px 18px 12px 20px; }
+  html[data-theme="doodle"] .hero .in { color:#fff; }
+  html[data-theme="doodle"] .hero .in button:not(.p) { color:#fff; border-color:#fff; }
+  html[data-theme="doodle"] .hero .in :is(button.p, a.btn) { background:#fff; color:#3b2f2a; border-color:#fff; }
+  html[data-theme="doodle"] .fold { border:0; border-top:2px dashed var(--line); border-radius:0; background:var(--bg); font-size:24px; }
+  html[data-theme="doodle"] .tile .art .new, html[data-theme="doodle"] .tile .bar2 { background:var(--accent); }
+  #theme { color:var(--mute); }
+</style>
+<script>
+// The device's theme (per device, a convenience): set before anything draws, so there is no flash.
+try { const t = localStorage.getItem("theme"); if (t === "doodle") document.documentElement.dataset.theme = t; } catch (e) {}
+if (new URLSearchParams(location.search).has("tv")) document.documentElement.classList.add("tvmode");
+</script>
+</head>
+<body>
+<header>
+  <a id="logo" href="/" aria-label="Home">Mimir<span>flix</span></a>
+  <nav class="topnav"><button data-tab="home" class="on">Home</button><button data-tab="list">My list</button><button data-tab="library">Library</button></nav>
+  <span class="grow"></span>
+  <button class="icon" id="theme" aria-label="Theme: Cinema or Doodle" title="Theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg></button>
+  <a id="tosend" href="send" aria-label="Send to TV">✏️ TV</a>
+  <a class="icon" id="tosettings" href="settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+  <a id="jfl" target="_blank" hidden>Jellyfin ↗</a>
+  <button class="icon" data-tab="search" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+</header>
+<main>
+<section id="watch">
+  <div id="searchbar" hidden><input id="q" type="search" placeholder="Search shows, movies, your videos" autocomplete="off" enterkeyhint="search"><div id="sugg" class="chips"></div><div id="idx"></div></div>
+  <div id="pagehead" hidden><button class="icon" id="back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg></button>
+    <div class="grow"><h2 id="ptitle2"></h2><div id="trail" class="trail"></div></div></div>
+  <div id="grid" class="grid"></div>
+</section>
+<section id="library" hidden>
+  <div class="libhead row"><div class="grow"><h2>Library <a href="/jobs" class="mute" style="font-size:14px;font-weight:400;margin-left:8px">Jobs →</a></h2><div class="mute">What Jellyfin shows. A folder brings in everything under it; exclude a subfolder to leave it out; or add single videos. Files are never moved or deleted.</div></div></div>
+  <div id="scan">…</div>
+  <div class="row" style="margin-bottom:14px"><button onclick="scanAll()">Scan all</button><button class="p" onclick="newLibrary()">New library</button></div>
+  <div id="libs"></div>
+</section>
+</main>
+<nav class="tabbar">
+  <button data-tab="home" class="on"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v10h5v-6h4v6h5V11h3z"/></svg>Home</button>
+  <button data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search</button>
+  <button data-tab="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>My list</button>
+  <button data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Library</button>
+</nav>
+<dialog id="player"><div class="row"><h2 class="grow" id="ptitle"></h2><button id="pip" onclick="pip()" title="Keep playing in a small window over other apps">⧉ Mini player</button><button onclick="closePlayer()">Close</button></div><video id="video" controls playsinline autopictureinpicture x-webkit-airplay="allow"></video><div id="nextup" class="row" hidden><span class="grow">Next: <b id="nexttitle"></b> in <span id="nextsecs"></span> s</span><button class="p" onclick="playNext()">▶ Play now</button><button onclick="cancelNext()">Cancel</button></div></dialog>
+<div id="toast"></div>
+<dialog id="dlg"><div id="dlgbody"></div></dialog>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const enc = encodeURIComponent;
+const KINDS = {homevideos:"Home videos & photos", movies:"Movies", tvshows:"Shows", music:"Music", mixed:"Mixed"};
+let libs = [];
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined});
+  if (r.status === 204) return null;
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail || d));
+  return d;
+}
+const act = fn => async (...a) => { try { await fn(...a); await load(); } catch (e) { alert(e.message); } };
+
+async function load() {
+  libs = await api("/api/libraries");
+  $("#libs").innerHTML = libs.length ? libs.map((l, i) => `<div class="card">
+    <div class="row"><div class="grow"><h2>${esc(l.name)}</h2><div class="mute">${KINDS[l.kind] || esc(l.kind)} · ${l.items} items${l.refresh && l.refresh !== "Idle" ? ` · <span class="warn">${esc(l.refresh)}${l.progress != null ? " " + Math.round(l.progress) + "%" : ""}</span>` : ""}</div></div>
+      <button onclick="addTo(${i}, 'folder')">Add folder</button><button onclick="addTo(${i}, 'video')">Add video</button>
+      <button onclick="scanOne(${i})">Scan</button><button onclick="renameLib(${i})">Rename</button><button class="x" title="Remove library" onclick="delLib(${i})">✕</button></div>
+    <ul>${l.folders.map((f, j) => `<li><span>📁</span><span class="grow">${esc(f.path)}${f.available ? "" : ` <span class="warn">(not connected)</span>`}
+        ${f.excluded.map((x, k) => `<br><span class="tag">skipped: ${esc(x.slice(f.path.length + 1))} <button class="x" onclick="unexclude(${i}, ${j}, ${k})">include</button></span>`).join("")}</span>
+        <button class="x" onclick="excludeIn(${i}, ${j})">Exclude a subfolder</button><button class="x" title="Remove folder" onclick="delFolder(${i}, ${j})">✕</button></li>`).join("")}
+      ${l.videos.map((v, j) => `<li><span>🎞</span><span class="grow">${esc(v.name)} <span class="mute">${esc(v.target)}</span>${v.available ? "" : ` <span class="warn">(not connected)</span>`}</span><button class="x" title="Remove video" onclick="delVideo(${i}, ${j})">✕</button></li>`).join("")}
+      ${!l.folders.length && !l.videos.length ? `<li class="mute">Empty: add a folder or a video.</li>` : ""}</ul></div>`).join("")
+    : `<div class="card mute">No libraries yet.</div>`;
+}
+
+async function tick() {
+  try {
+    const s = await api("/api/status");
+    $("#scan").innerHTML = s.scan ? `Scanning… ${s.scan.progress}%<div class="bar"><i style="width:${s.scan.progress}%"></i></div>` : `<span class="ok">●</span> Jellyfin idle`;
+    if (!$("#library").hidden && (s.scan || libs.some(l => l.refresh && l.refresh !== "Idle"))) load();
+  } catch (e) { $("#scan").textContent = "Jellyfin not reachable"; }
+}
+
+const delLib = act(async i => { if (confirm(`Remove library "${libs[i].name}" from Jellyfin? Your files stay where they are.`)) await api(`/api/libraries/${enc(libs[i].name)}`, {method:"DELETE"}); });
+const delFolder = act(async (i, j) => { const l = libs[i]; if (confirm(`Stop showing ${l.folders[j].path}?`)) await api(`/api/libraries/${enc(l.name)}/folders?path=${enc(l.folders[j].path)}`, {method:"DELETE"}); });
+const delVideo = act(async (i, j) => { const l = libs[i]; await api(`/api/libraries/${enc(l.name)}/videos/${enc(l.videos[j].name)}`, {method:"DELETE"}); });
+// By position, never a folder name inside the onclick (a name with a quote would be script).
+const unexclude = act(async (i, j, k) => api(`/api/libraries/${enc(libs[i].name)}/exclude?path=${enc(libs[i].folders[j].excluded[k])}`, {method:"DELETE"}));
+const scanOne = act(async i => api(`/api/libraries/${enc(libs[i].name)}/scan`, {method:"POST"}));
+const scanAll = act(async () => api("/api/scan", {method:"POST"}));
+const renameLib = act(async i => { const n = prompt("New name", libs[i].name); if (n && n !== libs[i].name) await api(`/api/libraries/${enc(libs[i].name)}`, {method:"PUT", body:{name:n}}); });
+
+function newLibrary() {
+  $("#dlgbody").innerHTML = `<h2>New library</h2><label>Name</label><input id="lname">
+    <label>Kind</label><select id="lkind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+    <div class="err" id="err"></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button onclick="$('#dlg').close()">Cancel</button><button class="p" id="go">Create</button></div>`;
+  $("#go").onclick = async () => {
+    try { await api("/api/libraries", {method:"POST", body:{name:$("#lname").value.trim(), kind:$("#lkind").value}}); $("#dlg").close(); load(); }
+    catch (e) { $("#err").textContent = e.message; }
+  };
+  $("#dlg").showModal();
+}
+
+// mode: folder (add a folder), video (add one file), exclude (pick a subfolder inside start)
+function picker(title, start, mode, done) {
+  const show = async path => {
+    try {
+      const b = await api("/api/browse?path=" + enc(path));
+      const here = esc(b.path).replace(/'/g, "\\'");
+      $("#dlgbody").innerHTML = `<h2>${esc(title)}</h2><div class="mute" style="margin-top:6px">${esc(b.path)}</div>
+        ${mode !== "video" ? `<div class="row" style="margin-top:8px"><button class="p" id="here">${mode === "exclude" ? "Exclude this folder" : "Add this folder"}</button></div>` : ""}
+        <div class="pick"><div><a data-p="${esc(b.parent)}">↑ up</a></div>
+        ${b.dirs.map(d => `<div><span>📁</span><a data-p="${esc(b.path + "/" + d)}">${esc(d)}</a></div>`).join("")}
+        ${mode === "video" ? b.videos.map(v => `<div><span>🎞</span><a data-v="${esc(b.path + "/" + v.name)}">${esc(v.name)}</a><span class="mute">${(v.bytes / 1e6).toFixed(0)} MB</span></div>`).join("") : ""}</div>
+        <div class="err" id="err"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button onclick="$('#dlg').close()">Close</button></div>`;
+      $("#dlgbody").querySelectorAll("[data-p]").forEach(a => a.onclick = () => show(a.dataset.p));
+      $("#dlgbody").querySelectorAll("[data-v]").forEach(a => a.onclick = () => finish(a.dataset.v));
+      if ($("#here")) $("#here").onclick = () => finish(b.path);
+    } catch (e) { $("#dlgbody").querySelector("#err") ? $("#err").textContent = e.message : alert(e.message); }
+  };
+  const finish = async p => { try { await done(p); $("#dlg").close(); load(); } catch (e) { $("#err").textContent = e.message; } };
+  show(start);
+  $("#dlg").showModal();
+}
+
+function addTo(i, what) {
+  const l = libs[i];
+  picker(what === "folder" ? `Add a folder to ${l.name}` : `Add a video to ${l.name}`, "/Volumes", what,
+    p => api(`/api/libraries/${enc(l.name)}/${what === "folder" ? "folders" : "videos"}`, {method:"POST", body:{path:p}}));
+}
+
+function excludeIn(i, j) {
+  const l = libs[i];
+  picker(`Exclude a subfolder of ${l.folders[j].path}`, l.folders[j].path, "exclude",
+    p => api(`/api/libraries/${enc(l.name)}/exclude`, {method:"POST", body:{path:p}}));
+}
+
+// Watch: Home, search, My list and a provider's pages
+let crumbs = [];  // [{title, node}] from the root
+let current = null;
+
+// Tabs: Home and Search share the Watch page; the logo always goes Home.
+function showTab(tab) {
+  document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x.dataset.tab === tab));
+  $("#watch").hidden = tab === "library"; $("#library").hidden = tab !== "library";
+  if (tab === "library") load();
+  if (tab === "search") { $("#searchbar").hidden = false; $("#q").focus(); if (!$("#q").value.trim()) searchIdle(); }
+  if (tab === "home") goHome();
+  if (tab === "list") { $("#searchbar").hidden = true; $("#q").value = ""; open("__list", "My list", false); }
+  scrollTo(0, 0);
+}
+function goHome() {
+  $("#searchbar").hidden = true; $("#q").value = ""; crumbs = []; $("#dlg").close();
+  document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x.dataset.tab === "home"));
+  $("#watch").hidden = false; $("#library").hidden = true;
+  open("", "", false); scrollTo(0, 0);
+}
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+// What sticks under the top bar (the search bar, a provider's header) sits exactly at its real height: no gap.
+const headH = () => document.documentElement.style.setProperty("--headh", $("header").getBoundingClientRect().height + "px");
+headH(); addEventListener("resize", headH); document.fonts?.ready.then(headH);
+// ✎: Cinema ↔ Doodle on this device (Doodle turns to chalkboard in dark mode and on the TV by itself).
+$("#theme").onclick = () => {
+  const doodle = document.documentElement.dataset.theme !== "doodle";
+  if (doodle) document.documentElement.dataset.theme = "doodle"; else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("theme", doodle ? "doodle" : "cinema"); } catch (e) {}
+  toast(doodle ? "Doodle theme on this device" : "Cinema theme on this device");
+  requestAnimationFrame(headH);  // Doodle's logo changes the bar's height
+};
+$("#logo").onclick = e => { e.preventDefault(); goHome(); };
+// Recent searches: the last 8 that led somewhere (Enter, or opening a result), kept on this device only.
+function recent() { try { return JSON.parse(localStorage.getItem("recentSearches") || "[]"); } catch (e) { return []; } }
+function rememberSearch() {
+  const q = $("#q").value.trim();
+  if (q.length < 2) return;
+  const list = [q, ...recent().filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 8);
+  try { localStorage.setItem("recentSearches", JSON.stringify(list)); } catch (e) { /* private window: not kept */ }
+}
+function searchIdle() {
+  $("#pagehead").hidden = true; pool = [];
+  const list = recent();
+  $("#grid").innerHTML = list.length
+    ? `<div class="full recent"><div class="row"><h3 class="grow">Recent searches</h3><button class="alt" id="clearrecent">Clear</button></div>`
+      + `<div class="chips">${list.map((q, i) => `<button class="chip" data-i="${i}">${esc(q)}</button>`).join("")}</div></div>`
+    : `<div class="full mute" style="margin-top:8px">Search your own videos${provs().map(p => ", " + esc(p.name)).join("")}${streaming.ready ? " and your streaming apps" : ""}.</div>`;
+  $("#grid").querySelectorAll(".chip").forEach(b => b.onclick = () => { $("#q").value = list[+b.dataset.i]; $("#q").dispatchEvent(new Event("input")); });
+  if ($("#clearrecent")) $("#clearrecent").onclick = () => { try { localStorage.removeItem("recentSearches"); } catch (e) { /* nothing kept */ } searchIdle(); };
+}
+$("#q").addEventListener("keydown", e => { if (e.key === "Enter") { rememberSearch(); $("#q").blur(); } });
+
+// TV mode (the mimir-flix TV app opens /?tv=1): the remote's arrows move between posters and buttons, OK opens,
+// BACK goes back (the app asks window.tvBack), and the main button plays in the TV's own Jellyfin app.
+const TV = new URLSearchParams(location.search).has("tv");
+if (TV) document.documentElement.classList.add("tv");
+const FOCUSABLE = 'a[href], button, input, [tabindex="0"]';
+function visible(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && !el.closest("[hidden]") && getComputedStyle(el).visibility !== "hidden";
+}
+function focusables() { return [...($("#dlg").open ? $("#dlg") : document).querySelectorAll(FOCUSABLE)].filter(visible); }
+// The nearest focusable item in the arrow's direction (distance across the direction counts three times as much).
+// Across, the gap between the edges counts, not between the centres: the full-width search box is straight above
+// every poster, not far off to the side of the left column's.
+function move(key) {
+  const all = focusables(), cur = document.activeElement;
+  if (!all.includes(cur)) return all[0] && all[0].focus();
+  const a = cur.getBoundingClientRect(), side = key === "ArrowLeft" || key === "ArrowRight";
+  let best = null, score = Infinity;
+  for (const el of all) {
+    if (el === cur) continue;
+    const b = el.getBoundingClientRect();
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+    const ahead = {ArrowRight: dx > 4, ArrowLeft: dx < -4, ArrowDown: dy > 4, ArrowUp: dy < -4}[key];
+    const gapX = Math.max(0, b.left - a.right, a.left - b.right), gapY = Math.max(0, b.top - a.bottom, a.top - b.bottom);
+    const d = side ? Math.abs(dx) + 3 * gapY + Math.abs(dy) / 100 : Math.abs(dy) + 3 * gapX + Math.abs(dx) / 100;
+    if (ahead && d < score) { score = d; best = el; }
+  }
+  if (best) { best.focus({preventScroll: true}); best.scrollIntoView({block: "center", inline: "nearest", behavior: "smooth"}); }
+}
+function tvFocus() {
+  if (!TV) return;
+  const all = focusables();
+  // A sheet starts on its first action (Play), not on ✕ above it.
+  const el = all.find(x => x.closest("#dlg .acts")) || all.find(x => x.closest("#grid, #dlg, .hero")) || all[0];
+  if (el) el.focus({preventScroll: true});
+}
+let lastFocus = null;
+if (TV) document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !$("#dlg").open) lastFocus = document.activeElement;  // where a sheet returns to
+  const typing = document.activeElement && document.activeElement.tagName === "INPUT";
+  if (e.key.startsWith("Arrow") && !(typing && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) { e.preventDefault(); move(e.key); }
+  else if (e.key === "Enter" && document.activeElement && document.activeElement.matches('[tabindex="0"]')) { e.preventDefault(); document.activeElement.click(); }
+});
+window.tvBack = () => {
+  if ($("#player").open) { closePlayer(); return true; }
+  if ($("#dlg").open) { $("#dlg").close(); return true; }
+  if (!$("#library").hidden) { goHome(); return true; }
+  if (crumbs.length || !$("#searchbar").hidden) { crumbs.length ? $("#back").click() : goHome(); return true; }
+  return false;
+};
+
+// Jellyfin sits beside this app: flix.home.<domain> → jellyfin.home.<domain>, opened in Safari (or a new tab).
+const JF = location.hostname.startsWith("flix.") ? `https://jellyfin.${location.hostname.slice(5)}` : "";
+if (JF) { $("#jfl").href = `${JF}/web/`; $("#jfl").hidden = false; }
+// On the iPhone the header link opens the Swiftfin app itself (a bare swiftfin:// link opens it where it was).
+if (JF && /iPhone|iPad/.test(navigator.userAgent)) { $("#jfl").href = "swiftfin://"; $("#jfl").removeAttribute("target"); $("#jfl").textContent = "Swiftfin ↗"; }
+
+// id: a link to the title in Jellyfin; play: the link plays it (an episode or a video), not only opens it (a show).
+function toast(msg, id, play) {
+  const t = $("#toast"); t.textContent = msg; t.style.display = "block";
+  if (id) t.insertAdjacentHTML("beforeend", ` ${play ? jfOpen(id, "▶ Play", true) : jfOpen(id, "Open")}`);
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", id ? 10000 : 3500);
+}
+
+let pool = [];  // videos shown as tiles (rows and search), opened by index
+function tile(i, sub) {
+  // The title is drawn on the poster too: it shows when there is no artwork (or it fails to load).
+  const img = i.thumb ? `<img loading="lazy" src="${i.thumb}" alt="" onerror="this.remove()">` : "";
+  const attrs = i.kind === "folder" ? `data-node="${esc(i.node || "")}"` : `data-video="${pool.push(i) - 1}"`;
+  const line = sub || i.sub || "";
+  // Where it plays: the house's apps, and the provider for its results (both when its title is on an app too).
+  const badges = (i.apps || []).map(a => `<b class="${esc(a.app)}">${esc(a.name)}</b>`).concat(i.src ? [`<b class="prov">${esc(i.src)}</b>`] : []);
+  const apps = badges.length ? `<span class="apps">${badges.join("")}</span>` : "";
+  if (i.kind === "folder" && i.node) shows[i.node] = {thumb: i.thumb || "", sub: i.sub || "", apps: i.apps, tmdbRef: i.tmdbRef, tmdbTitle: i.tmdbTitle};  // for + My list on its page
+  return `<div class="tile" tabindex="0" ${attrs} data-title="${esc(i.title)}"><div class="art"><span class="ph">${esc(i.title)}</span>${img}${i.jf_id ? `<span class="in">✓ Jellyfin</span>` : ""}${i.new ? `<span class="new">${i.new} new</span>` : ""}${apps}</div>`
+    + (i.progress ? `<div class="bar2" style="width:${i.progress}%"></div>` : "")
+    + `<div class="t">${esc(i.title)}</div>${line ? `<div class="s">${esc(line)}</div>` : ""}</div>`;
+}
+
+// How a video plays: Jellyfin first (its web app here, its TV app on the TV); playing here and Kodi are the others.
+// On the iPhone, ▶ Jellyfin opens the item in the Swiftfin app (its swiftfin:// links; Swiftfin must be installed and
+// signed in to this server) and "web" opens Safari. Elsewhere it opens Jellyfin in a browser tab.
+const jfLink = id => `${JF}/web/#/details?id=${id}`;
+const IOS = /iPhone|iPad/.test(navigator.userAgent);
+let appIds = null;
+if (IOS) api("/api/jf/app").then(r => appIds = r).catch(() => {});
+const appLink = id => appIds ? `swiftfin://${appIds.server}/${appIds.user}/item/${id}` : jfLink(id);
+// play: a video; Swiftfin's links only open its page, so the Air also tells the app to play it (Jellyfin's remote
+// control, as for the TV app), once the app has come up. keepalive: the request survives the switch to Swiftfin.
+const jfOpen = (id, label, play) => appIds
+  ? `<a class="btn" href="${appLink(id)}"${play ? ` onclick="playInApp('${id}')"` : ""}>${label}</a><a class="alt" href="${jfLink(id)}" target="_blank">web</a>`
+  : `<a class="btn" href="${jfLink(id)}" target="_blank">${label}</a>`;
+function playInApp(id) {
+  fetch("/api/jf/phone", {method: "POST", keepalive: true, headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})}).catch(() => {});
+}
+function actions(v, k, ctx) {
+  // A streaming title: its apps; in a sheet also My list and 👍/👎 (recommendations learn from them).
+  if (v.tmdb) return appButtons(v) + (ctx === "sheet" ? listBtn({tmdb: v.tmdb, title: v.title}) + voteBtns(v) : "");
+  return playActions(v, k, ctx) + appButtons(v);
+}
+function playActions(v, k, ctx) {
+  const c = ctx === "sheet" ? 1 : 0;
+  // + My list: in a sheet, and on the rows of a list of movies or channels (an episode belongs to its show).
+  // A title already in the home library goes on My list by its Jellyfin id (in its sheet).
+  const mine = v.id || v.jf_id ? (ctx === "sheet" || !v.id ? listBtn({jf: v.id || v.jf_id, title: v.title}) : "")
+    : ctx !== "sheet" && current.episodic ? ""
+    : listBtn({p: v.p, url: v.url, title: v.title, thumb: v.thumb, sub: v.sub, here: !!v.here, page: ctx === "sheet" ? v.page || "" : current.node || ""});
+  if (TV) return `<button class="p" onclick="go('tv',${k},${c})">▶ Play</button>`
+    + (kodiReady ? `<button class="alt" onclick="go('kodi',${k},${c})">Kodi</button>` : "") + mine;
+  // Your videos and a provider's items Jellyfin has (jf_id, from Jellyfin itself): ▶ opens them in Jellyfin (Swiftfin
+  // on the iPhone); others: ＋ adds them. Play here plays in this page, through Jellyfin when it has the item.
+  const id = v.id || v.jf_id;
+  const open = id ? jfOpen(id, "▶ Jellyfin", true) : `<button class="p" onclick="go('jf',${k},${c})">＋ Jellyfin</button>`;
+  return `${open}<button onclick="go('tv',${k},${c})">📺 TV</button>`
+    + (id || v.here ? `<button class="alt" onclick="go('here',${k},${c})">Play here</button>` : "")
+    + (kodiReady ? `<button class="alt" onclick="go('kodi',${k},${c})">Kodi</button>` : "") + mine;
+}
+
+// The streaming apps (Netflix, Peacock …): where a title streams comes from TMDB on the Air. On the TV a button opens
+// the app there (at its search for the title where it can); on the phone the app's link opens the app, and 📺 opens
+// it on the TV instead.
+let streaming = {ready: false, tv: false}, toOpen = [];
+api("/api/streaming/status").then(r => streaming = r).catch(() => {});
+const norm = t => t.toLowerCase().replace(/\(\d{4}\)|\[[^\]]*\]/g, "").replace(/[^a-z0-9]+/g, "");
+const yearOf = t => (t.match(/\((\d{4})\)/) || [])[1] || "";
+function appButtons(v) {
+  return (v.apps || []).map((a, n) => {
+    // TMDB's id (and title) lets the Air find the app's own link for the title (JustWatch), so the app opens at it.
+    const tmdb = v.tmdb || v.tmdbRef || "", title = v.tmdbTitle || v.title.replace(/\s*\(\d{4}\)\s*$/, "");
+    const k = toOpen.push({app: a.app, name: a.name, title, tmdb}) - 1;
+    const go = `api/streaming/go?app=${enc(a.app)}&title=${enc(title)}&tmdb=${enc(tmdb)}`;
+    const tv = `<button class="${TV && !v.url && !v.id && n === 0 ? "p" : "alt"}" onclick="openApp(${k})">${TV ? "▶ " : "📺 "}${esc(a.name)}</button>`;
+    return TV ? tv : `<a class="${v.tmdb && n === 0 ? "btn" : "alt"}" href="${esc(go)}" target="_blank" rel="noopener">${esc(a.name)} ↗</a>` + (streaming.tv ? tv : "");
+  }).join("");
+}
+async function openApp(k) {
+  const o = toOpen[k];
+  try { await api("/api/streaming/open", {method:"POST", body:{app: o.app, title: o.title, tmdb: o.tmdb}}); toast(`Opening ${o.name} on the TV`); }
+  catch (e) { toast(e.message); }
+}
+// A search hit from the streaming apps that is also in Jellyfin or a provider shows once: there, with the apps added.
+function mergeStreaming(streams, local) {
+  return streams.filter(w => {
+    const hits = local.filter(i => norm(i.title) === norm(w.title) && (!yearOf(i.title) || !w.year || yearOf(i.title) === w.year));
+    hits.forEach(i => Object.assign(i, {apps: w.apps, tmdbRef: w.tmdb, tmdbTitle: w.title}));
+    return !hits.length;
+  });
+}
+
+// My list: one list for the house. Titles in the home library are Jellyfin favourites (every Jellyfin app shows them);
+// titles on the streaming apps (by TMDB id) and each provider's shows and videos are kept on the Air, as pointers.
+let saved = new Set(), shows = {}, toSave = [];
+const keyOf = t => t.node || t.url || (t.tmdb ? "tmdb:" + t.tmdb : t.jf ? "jf:" + t.jf : "");
+async function loadList() {
+  const [library, titles, ...mine] = await Promise.all([
+    api("/api/jf/list").catch(() => []),
+    api("/api/list/titles").catch(() => []),
+    ...provs().map(p => api(P(p.id) + "/list").catch(() => [])),
+  ]);
+  const l = [...library.map(t => ({...t, jf: t.id, key: "jf:" + t.id})), ...titles.map(t => ({...t, key: "tmdb:" + t.tmdb, sub: t.apps.map(a => a.name).join(", ") || t.year})), ...mine.flat()];
+  saved = new Set(l.map(i => i.key));
+  return l;
+}
+function listBtn(t) {
+  const on = saved.has(keyOf(t));
+  return `<button class="alt lb" data-key="${esc(keyOf(t))}" onclick="toggleList(${toSave.push(t) - 1})">${on ? "✓ My list" : "＋ My list"}</button>`;
+}
+async function toggleList(n) {
+  const t = toSave[n], key = keyOf(t), on = saved.has(key);
+  try {
+    if (t.jf) {
+      if (on) await api("/api/jf/list?id=" + enc(t.jf), {method:"DELETE"});
+      else await api("/api/jf/list", {method:"POST", body:{id: t.jf}});
+    } else if (t.tmdb && !t.node && !t.url) {
+      if (on) await api("/api/list/titles?tmdb=" + enc(t.tmdb), {method:"DELETE"});
+      else await api("/api/list/titles", {method:"POST", body:{tmdb: [t.tmdb]}});
+    } else if (on) await api(P(t.p || pidOf(t.node)) + "/list?key=" + enc(key), {method:"DELETE"});
+    else await api(P(t.p || pidOf(t.node)) + "/list", {method:"POST", body:t});
+  } catch (e) { return toast(e.message); }
+  on ? saved.delete(key) : saved.add(key);
+  document.querySelectorAll(".lb").forEach(b => { if (b.dataset.key === key) b.textContent = on ? "＋ My list" : "✓ My list"; });
+  toast(on ? "Removed from My list" : "Added to My list");
+  if (current && current.node === "__list") myList();
+}
+
+// 👍/👎 on a streaming title: 👍 means more like it, 👎 leaves it out of every recommendation. Tap again to undo.
+let votes = null;
+function voteBtns(v) {
+  if (!votes) { api("/api/recs/feedback").then(l => { votes = Object.fromEntries(l.map(x => [x.tmdb, x.vote])); paintVotes(); }).catch(() => {}); }
+  const k = esc(v.tmdb), t = esc(v.title);
+  return `<button class="alt vote" data-tmdb="${k}" data-title="${t}" data-v="up" onclick="vote(this)" aria-label="More like this">👍</button>`
+    + `<button class="alt vote" data-tmdb="${k}" data-title="${t}" data-v="down" onclick="vote(this)" aria-label="Not for me">👎</button>`;
+}
+function paintVotes() {
+  document.querySelectorAll(".vote").forEach(b => b.classList.toggle("on", (votes || {})[b.dataset.tmdb] === b.dataset.v));
+}
+async function vote(b) {
+  const now = (votes || {})[b.dataset.tmdb] === b.dataset.v ? "clear" : b.dataset.v;
+  try { await api("/api/recs/feedback", {method:"POST", body:{tmdb: b.dataset.tmdb, vote: now, title: b.dataset.title}}); } catch (e) { return toast(e.message); }
+  votes = votes || {};
+  if (now === "clear") delete votes[b.dataset.tmdb]; else votes[b.dataset.tmdb] = now;
+  paintVotes();
+  toast(now === "up" ? "Noted: more like this" : now === "down" ? "Noted: left out of recommendations" : "Cleared");
+}
+
+// A video tile (a movie in a row or in search) opens a sheet; it has its own context, the page's stays as it is.
+let sheet = null;
+function videoSheet(v) {
+  sheet = {jf: !!v.id, title: v.title, videos: [v]};
+  const close = `<button class="icon close" onclick="$('#dlg').close()" aria-label="Close">✕</button>`;
+  $("#dlgbody").innerHTML = (v.thumb ? `<div class="banner"><img src="${v.thumb}" alt="">${close}</div>` : `<div class="grab"></div><div class="row" style="justify-content:flex-end;padding:6px 8px 0">${close}</div>`)
+    + `<div class="body"><h2>${esc(v.title)}</h2>${v.sub ? `<div class="mute">${esc(v.sub)}</div>` : ""}${v.desc ? `<p class="desc">${esc(v.desc)}</p>` : ""}
+      <div class="row acts">${actions(v, 0, "sheet")}</div></div>`;
+  $("#dlg").classList.add("sheet");
+  $("#dlg").showModal();
+}
+$("#dlg").addEventListener("close", () => { $("#dlg").classList.remove("sheet"); if (TV && lastFocus) lastFocus.focus({preventScroll: true}); });
+// TV: a sheet takes the focus while open and gives it back to the poster it came from when it closes.
+new MutationObserver(() => { if (TV && $("#dlg").open) tvFocus(); }).observe($("#dlg"), {attributes: true, attributeFilter: ["open"]});
+$("#dlg").addEventListener("click", e => { if (e.target === $("#dlg")) $("#dlg").close(); });  // tap outside closes
+
+// The show an episode belongs to: this page, or its parent when this page is one season of it.
+function showOf(ctx) {
+  const c = /^(season|part|volume)\b/i.test(ctx.title) && crumbs.length > 1 ? crumbs[crumbs.length - 2] : ctx;
+  return {node: c.node, title: c.title};
+}
+
+async function go(how, k, fromSheet) {
+  const ctx = fromSheet ? sheet : current, v = ctx.videos[k];
+  $("#dlg").close();
+  if (how === "here") return playHere(ctx, v);
+  const title = ctx.videos.length === 1 ? ctx.title : v.title;
+  try {
+    if (how === "kodi") {
+      await api(ctx.jf ? "/api/jf/kodi" : P(v.p) + "/kodi", {method:"POST", body: ctx.jf ? {id:v.id} : {url:v.url, title}});
+      return toast("Playing with Kodi on the TV");
+    }
+    // Jellyfin has it already: play it by its id (adding it again would rewrite its file mid-play).
+    const known = ctx.jf ? v.id : how === "tv" && v.jf_id;
+    if (known) { await api("/api/jf/tv", {method:"POST", body:{id:known}}); return toast("Playing in Jellyfin on the TV"); }
+    toast(how === "tv" ? "Starting in Jellyfin on the TV…" : "Adding to Jellyfin…");
+    const tv = how === "tv";
+    const r = ctx.episodic
+      ? await api(P(v.p) + "/jellyfin", {method:"POST", body:{...showOf(ctx), episode:v.url, tv}})
+      : await api(P(v.p) + "/jellyfin/video", {method:"POST", body:{url:v.url, title, tv, page: fromSheet ? v.page || "" : ctx.node || ""}});
+    // A window opened after this wait is blocked on the iPhone, so the link is tapped from the message.
+    markAdded(ctx, v, r.id, !!fromSheet);
+    if (tv) toast("Playing in Jellyfin on the TV");
+    else toast("Added to Jellyfin", r.id, true);
+  } catch (e) { toast(e.message); }
+}
+
+async function openShow() {
+  toast("Adding to Jellyfin…");
+  try {
+    const s = showOf(current);
+    const r = await api(P(pidOf(s.node)) + "/jellyfin", {method:"POST", body:s});
+    toast("Added to Jellyfin", r.id);
+    reloadPage();
+  } catch (e) { toast(e.message); }
+}
+
+// After an add, the buttons and badges say so. Adding an episode adds its whole show, so that page is read again
+// (Jellyfin then has an id for every episode); a single video just takes the id it was given.
+function markAdded(ctx, v, id, fromSheet) {
+  if (ctx.episodic && !fromSheet) return reloadPage();
+  v.jf_id = id;
+  if (fromSheet && $("#dlg").open) $("#dlg .acts").innerHTML = actions(v, 0, "sheet");
+  document.querySelectorAll("#grid .ep .acts[data-k]").forEach(el => { if (current.videos[+el.dataset.k] === v) el.innerHTML = actions(v, +el.dataset.k); });
+  document.querySelectorAll("#grid .tile[data-video]").forEach(t => {
+    if (pool[+t.dataset.video] === v && !t.querySelector(".in")) t.querySelector(".art").insertAdjacentHTML("beforeend", `<span class="in">✓ Jellyfin</span>`);
+  });
+}
+function reloadPage() { if (current && current.node) { const y = scrollY; open(current.node, current.title, false).then(() => scrollTo(0, y)); } }
+
+function bindTiles(push) {
+  const searching = !!$("#q").value.trim() && !crumbs.length;
+  $("#grid").querySelectorAll(".tile[data-node]").forEach(t => t.onclick = () => { if (searching) rememberSearch(); open(t.dataset.node, t.dataset.title, push); });
+  $("#grid").querySelectorAll(".tile[data-video]").forEach(t => t.onclick = () => { if (searching) rememberSearch(); videoSheet(pool[+t.dataset.video]); });
+  if (document.activeElement !== $("#q")) tvFocus();  // TV: the new page's first item (not while typing a search)
+}
+
+function renderTrail() {
+  $("#pagehead").hidden = !crumbs.length;
+  if (!crumbs.length) return;
+  $("#ptitle2").textContent = crumbs[crumbs.length - 1].title;
+  $("#trail").innerHTML = crumbs.length > 1 ? [`<a data-i="-1">Home</a>`].concat(crumbs.slice(0, -1).map((c, i) => `<a data-i="${i}">${esc(c.title)}</a>`)).join(" › ") : "";
+  $("#trail").querySelectorAll("a").forEach(a => a.onclick = () => {
+    const i = +a.dataset.i;
+    if (i < 0) goHome(); else { crumbs = crumbs.slice(0, i + 1); open(crumbs[i].node, crumbs[i].title, false); }
+  });
+}
+$("#back").onclick = () => {
+  if (crumbs.length > 1) { crumbs.pop(); const c = crumbs[crumbs.length - 1]; open(c.node, c.title, false); }
+  else if ($("#q").value.trim()) { crumbs = []; renderTrail(); $("#q").dispatchEvent(new Event("input")); }
+  else goHome();
+};
+
+async function open(node, title, push = true) {
+  if (push && node) crumbs.push({title, node});
+  renderTrail(); scrollTo(0, 0);
+  $("#grid").innerHTML = `<div class="skel">${"<i></i>".repeat(8)}</div>`;
+  try {
+    if (!node) return home();
+    if (node.startsWith("__sections:")) return sections(node.slice(11));
+    if (node === "__list") return myList();
+    const jfNode = node.startsWith("jf:");
+    const d = jfNode ? await api("/api/jf/browse?id=" + enc(node.slice(3))) : await api(P(pidOf(node)) + "/browse?node=" + enc(node));
+    const folders = d.items.filter(i => i.kind === "folder"), videos = d.items.filter(i => i.kind === "video");
+    // A show Jellyfin has (jf_id) opens there; a season page whose episodes it all has needs no add button either.
+    current = {node, title: title || d.title, items: d.items, jf: jfNode, jf_id: d.jf_id || "", inJf: !!d.jf_id || (videos.length > 0 && videos.every(v => v.jf_id))};
+    const isShow = videos.length || (folders.length && folders.every(f => /season|part|volume/i.test(f.title)));
+    let html = "";
+    if (isShow && node && !jfNode && episodicShow(d.items)) html += `<div class="showbar">${d.items[0] && d.items[0].desc ? `<div class="mute">${esc(d.items[0].desc)}</div>` : ""}<div class="row big">${current.jf_id && !TV ? jfOpen(current.jf_id, "▶ Show in Jellyfin") : current.jf_id || current.inJf ? "" : `<button class="p" onclick="openShow()">＋ Add show to Jellyfin</button>`}${showSave()}${appButtons({title: current.title, ...(shows[node] || {})})}</div></div>`;
+    if (jfNode && d.desc) html += `<div class="showbar"><div class="mute">${esc(d.desc)}</div></div>`;
+    html += folders.map(f => tile(f, f.sub)).join("");
+    current.episodic = !jfNode && videos.some(v => /episode|\bep\s*\d/i.test(v.title));
+    current.videos = videos;
+    if (videos.length) html += `<div class="eps">${videos.map((v, k) => `<div class="ep"><span class="grow">${esc(v.title)}${v.sub ? ` <span class="mute">${esc(v.sub)}</span>` : ""}</span>
+      <span class="acts" data-k="${k}">${actions(v, k)}</span></div>`).join("")}</div>`;
+    $("#grid").innerHTML = html || `<div class="full mute">Nothing here.</div>`;
+    bindTiles(true);
+  } catch (e) { $("#grid").innerHTML = `<div class="full err">${esc(e.message)}</div>`; }
+}
+
+// Play here tells Jellyfin what is watched (through the Air): where it was left and what was finished, so Continue
+// watching and played marks are the same in every Jellyfin app, the TV's too. A video Jellyfin has starts where it
+// was left, and an episode goes on to the next one.
+let watching = null, nextTimer = null, nextItem = null;
+function playHere(ctx, v) {
+  // All of it inside the tap, before any wait: iOS starts a video only from a tap, so the source is a link the Air
+  // sends on (to the file, or to Jellyfin's HLS) and the place it was left comes in alongside.
+  cancelNext();
+  $("#ptitle").textContent = ctx.videos.length === 1 ? v.title : `${ctx.title} · ${v.title}`;
+  const id = ctx.jf ? v.id : v.jf_id || "";
+  // Through Jellyfin when it has it, unless the provider's own stream plays here (no conversion needed).
+  $("#video").src = id && (ctx.jf || !v.here) ? "/api/jf/play/" + enc(id) : P(v.p) + "/play?u=" + enc(v.url);
+  watching = id ? {id, session: Array.from({length: 32}, () => (Math.random() * 16 | 0).toString(16)).join(""), started: false, sent: 0, start: 0} : null;
+  // The lock screen and Control Center show what plays (AirPlay is in the player's own controls).
+  if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({title: $("#ptitle").textContent, artwork: v.thumb ? [{src: new URL(v.thumb, location.href).href}] : []});
+  $("#player").showModal();
+  $("#video").play().catch(() => {});
+  if (id) api("/api/jf/resume/" + enc(id)).then(r => { if (watching && watching.id === id) { watching.start = r.start; resumeAt(); } }).catch(() => {});
+}
+// Jumps to where it was left once both the place and the video's length are known (whichever comes second).
+function resumeAt() {
+  const v = $("#video");
+  if (!watching || !watching.start || v.readyState < 1) return;
+  if (!isFinite(v.duration) || watching.start < v.duration - 30) v.currentTime = watching.start;
+  watching.start = 0;
+}
+$("#video").addEventListener("error", () => { if ($("#player").open && $("#video").getAttribute("src")) toast("This video cannot play here"); });
+function report(event, beacon) {
+  if (!watching) return;
+  const v = $("#video"), body = {id: watching.id, session: watching.session, event, position: v.currentTime || 0,
+    duration: isFinite(v.duration) ? v.duration : 0, paused: v.paused};
+  watching.sent = Date.now();
+  if (beacon) navigator.sendBeacon("/api/jf/playing", new Blob([JSON.stringify(body)], {type: "application/json"}));
+  else api("/api/jf/playing", {method: "POST", body}).catch(() => {});
+}
+function stopWatching(beacon) { if (watching && watching.started) report("stopped", beacon); watching = null; }
+$("#video").addEventListener("loadedmetadata", resumeAt);
+$("#video").addEventListener("playing", () => { if (watching && !watching.started) { watching.started = true; report("start"); } });
+$("#video").addEventListener("timeupdate", () => { if (watching && watching.started && Date.now() - watching.sent > 10000) report("progress"); });
+$("#video").addEventListener("pause", () => { if (watching && watching.started && !$("#video").ended) report("progress"); });
+$("#video").addEventListener("ended", async () => {
+  const id = watching && watching.id;
+  stopWatching();
+  if (!id || !$("#player").open) return;
+  const n = await api("/api/jf/next/" + enc(id)).catch(() => ({}));
+  if (!n.id || !$("#player").open) return;
+  // "A Show · S01E02 · Title" (the card's sub line also has the length)
+  nextItem = {...n, title: n.sub ? `${n.sub.split(" · ").slice(0, 2).join(" · ")} · ${n.title}` : n.title};
+  let left = 10;
+  $("#nexttitle").textContent = nextItem.title;
+  $("#nextsecs").textContent = left;
+  $("#nextup").hidden = false;
+  nextTimer = setInterval(() => { left -= 1; $("#nextsecs").textContent = left; if (left <= 0) playNext(); }, 1000);
+});
+function playNext() { const n = nextItem; cancelNext(); if (n) playHere({jf: true, title: "", videos: [n]}, n); }
+function cancelNext() { clearInterval(nextTimer); nextTimer = null; nextItem = null; $("#nextup").hidden = true; }
+addEventListener("pagehide", () => stopWatching(true));
+// Picture in picture: the video keeps playing in a small window over other apps (Safari's own mini player).
+function pip() {
+  const v = $("#video");
+  if (v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode("picture-in-picture")) {
+    v.webkitSetPresentationMode(v.webkitPresentationMode === "picture-in-picture" ? "inline" : "picture-in-picture");
+  } else if (document.pictureInPictureEnabled) {
+    (document.pictureInPictureElement ? document.exitPictureInPicture() : v.requestPictureInPicture()).catch(e => toast(e.message));
+  } else toast("This browser has no mini player");
+}
+function closePlayer() { stopWatching(); cancelNext(); $("#video").pause(); $("#video").removeAttribute("src"); $("#video").load(); $("#player").close(); }
+$("#player").addEventListener("close", () => { stopWatching(); cancelNext(); $("#video").pause(); });
+
+let searchTimer;
+// Suggestions as you type: matching recent searches, each provider's titles (its local index) and movie and show
+// titles (TMDB). One tap searches for it.
+let suggTimer = null, picked = "";
+function suggestFor(q) {
+  clearTimeout(suggTimer);
+  if (q.length < 2 || q === picked) { $("#sugg").innerHTML = ""; return; }
+  suggTimer = setTimeout(async () => {
+    const [titles, ...fromProviders] = await Promise.all([
+      api("/api/streaming/suggest?q=" + enc(q)).catch(() => []),
+      ...provs().map(p => api(P(p.id) + "/suggest?q=" + enc(q)).catch(() => [])),
+    ]);
+    const names = fromProviders.flat();
+    if ($("#q").value.trim() !== q) return;
+    const low = q.toLowerCase(), seen = new Set([low]), list = [];
+    for (const t of [...recent().filter(r => r.toLowerCase().includes(low)), ...names, ...titles]) {
+      if (!seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); list.push(t); }
+    }
+    $("#sugg").innerHTML = list.slice(0, 8).map(t => `<button class="chip">${esc(t)}</button>`).join("");
+    $("#sugg").querySelectorAll(".chip").forEach(b => b.onclick = () => {
+      $("#q").value = picked = b.textContent; $("#sugg").innerHTML = ""; rememberSearch(); $("#q").dispatchEvent(new Event("input"));
+    });
+  }, 120);
+}
+
+$("#q").addEventListener("input", () => {
+  suggestFor($("#q").value.trim());
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = $("#q").value.trim();
+    crumbs = []; renderTrail();
+    if (!q) return searchIdle();
+    $("#grid").innerHTML = `<div class="skel">${"<i></i>".repeat(8)}</div>`;
+    // Results show as each source answers: your videos and your apps in a moment, a provider's own search in
+    // seconds. null: still searching that source.
+    const got = {mine: null, streams: null};
+    for (const p of provs()) got["p:" + p.id] = null;
+    const draw = () => {
+      if ($("#q").value.trim() !== q) return;
+      const waiting = Object.values(got).some(v => v === null);
+      // Each provider's groups, its name on every poster.
+      const groups = provs().flatMap(p => (got["p:" + p.id] || []).map(g => ({...g, src: p.name})));
+      const theirs = groups.flatMap(g => g.items);
+      pool = [];
+      let html = "";
+      // A provider's title already added to Jellyfin shows once: as its result (✓ Jellyfin, with + My list on its
+      // page), not again under Your videos.
+      const added = new Set(theirs.map(i => i.jf_id).filter(Boolean));
+      const mine = (got.mine || []).filter(m => !added.has(m.id));
+      const elsewhere = mergeStreaming(got.streams || [], mine.concat(theirs));
+      if (mine.length) html += `<div class="group">Your videos</div>` + mine.map(m => tile(m)).join("");
+      if (elsewhere.length) html += `<div class="group">On your apps</div>` + elsewhere.map(w => tile(w, w.year)).join("");
+      // Each poster says its section too: the same show is often in several, with different seasons.
+      for (const g of groups) html += `<div class="group">${esc(g.section)}</div>` + g.items.map(i => tile({...i, src: g.src}, [g.section, i.sub].filter(Boolean).join(" · "))).join("");
+      const still = provs().filter(p => got["p:" + p.id] === null).map(p => p.name);
+      if (html && waiting) html += `<div class="full mute" style="margin-top:12px">Still searching${still.length ? " " + esc(still.join(", ")) : ""}…</div>`;
+      $("#grid").innerHTML = html || (waiting ? `<div class="skel">${"<i></i>".repeat(8)}</div>` : `<div class="full mute">Nothing matches “${esc(q)}”.</div>`);
+      crumbs = []; bindTiles(true);
+    };
+    const arrive = (key, p) => p.catch(() => []).then(v => { got[key] = v; draw(); });
+    arrive("mine", api("/api/jf/search?q=" + enc(q)));
+    arrive("streams", api("/api/streaming/search?q=" + enc(q)));
+    for (const p of provs()) arrive("p:" + p.id, api(P(p.id) + "/search?q=" + enc(q)));
+  }, 250);
+});
+
+// What a provider is busy with (e.g. rebuilding its index), under the search box.
+let kodiReady = false;
+async function provStatus() {
+  const notes = await Promise.all(provs().map(p => api(P(p.id) + "/status").then(s => s.note).catch(() => "")));
+  $("#idx").textContent = notes.filter(Boolean).join(" · ");
+}
+
+function showSave() {
+  const s = showOf(current);
+  // A show Jellyfin has is a Jellyfin favourite on My list, like anything in the library.
+  const t = current.jf_id ? {jf: current.jf_id, title: s.title} : {p: pidOf(s.node), node: s.node, title: s.title, ...(shows[s.node] || {})};
+  return listBtn(t).replace('class="alt lb"', 'class="lb"');
+}
+
+function episodicShow(items) {
+  return items.some(i => i.kind === "video" && /episode|\bep\s*\d/i.test(i.title)) || items.some(i => i.kind === "folder" && /^season|^part/i.test(i.title));
+}
+
+// TMDB's 780 px poster for the featured title: the 342 px one in rows looks soft at full phone width.
+const big = url => (url || "").replace("/t/p/w342/", "/t/p/w780/");
+
+async function home() {
+  crumbs = []; renderTrail(); pool = [];
+  current = {node: "", title: "Home", items: [], videos: []};
+  const head = (title, node, src) => `<div class="rowhead${src ? " sub" : ""}"><h3>${esc(title)}</h3>${node ? `<a data-see="${esc(node)}" data-title="${esc(title)}">See all ›</a>` : ""}</div>`;
+  const strip = items => `<div class="strip">${items.map(i => tile(i)).join("")}</div>`;
+  $("#grid").innerHTML = `<div class="skel">${"<i></i>".repeat(8)}</div>`;
+  const [mine, provRows, list, trending, apps, jfRows, recs] = await Promise.all([
+    api("/api/jf/browse").catch(() => ({items: []})),
+    Promise.all(provs().map(p => api(P(p.id) + "/home").then(rows => ({p, rows})).catch(e => { toast(e.message); return {p, rows: []}; }))),
+    loadList(),
+    api("/api/streaming/trending").catch(() => []),
+    api("/api/streaming/rows").catch(() => []),
+    api("/api/jf/home").catch(() => ({resume: [], next_up: [], new: []})),
+    api("/api/recs?category=worth_the_hype&limit=15").catch(() => ({items: []})),
+  ]);
+  if (current.title !== "Home" || crumbs.length || $("#q").value.trim()) return;
+  // Featured: the top title trending on the house's apps (TMDB, its wide backdrop on wide screens), else the first
+  // provider video with artwork.
+  const top = trending.find(t => t.backdrop || t.thumb);
+  let html = "";
+  if (top) {
+    const k = pool.push(top) - 1;
+    const img = top.backdrop && top.thumb
+      ? `<picture><source media="(min-width:700px)" srcset="${top.backdrop}"><img src="${big(top.thumb)}" alt=""></picture>`
+      : `<img src="${top.backdrop || big(top.thumb)}" alt="">`;
+    html += `<div class="hero">${img}<div class="in"><h2>${esc(top.title)}</h2><div class="s">${esc([top.year, top.apps.map(a => a.name).join(", ")].filter(Boolean).join(" · "))}</div>
+      <div class="row big">${appButtons(top)}<button onclick="videoSheet(pool[${k}])">ⓘ Info</button></div></div></div>`;
+  }
+  const pick = top ? null : provRows.flatMap(x => x.rows).flatMap(r => r.items).find(i => i.kind === "video" && i.thumb);
+  if (pick) {
+    const k = pool.push(pick) - 1;
+    html += `<div class="hero"><img src="${pick.thumb}" alt=""><div class="in"><h2>${esc(pick.title)}</h2>${pick.sub ? `<div class="s">${esc(pick.sub)}</div>` : ""}
+      <div class="row big">${TV ? `<button class="p" onclick="heroGo(${k}, 'tv')">▶ Play</button>` : pick.jf_id ? jfOpen(pick.jf_id, "▶ Jellyfin", true) : `<button class="p" onclick="heroGo(${k}, 'jf')">＋ Jellyfin</button>`}<button onclick="heroGo(${k}, 'tv')">📺 TV</button><button onclick="videoSheet(pool[${k}])">ⓘ Info</button></div></div></div>`;
+  }
+  // Jellyfin's own rows first: what was started, what comes next, what just arrived. Each video shows once, in the
+  // first of these rows it is in.
+  const shown = new Set();
+  const once = items => items.filter(i => !shown.has(i.id) && shown.add(i.id));
+  for (const [title, items] of [["Continue watching", jfRows.resume], ["Next up", jfRows.next_up], ["New episodes", jfRows.new]]) {
+    const left = once(items);
+    if (left.length) html += head(title) + strip(left);
+  }
+  if (recs.items.length) html += head("Worth the hype on your apps", "__recs") + strip(recs.items.map(recTile));
+  if (list.length) html += head("My list", "__list") + strip(list);
+  if (trending.length) html += head("Trending on your apps") + strip(trending);
+  for (const a of apps) html += head(`Popular on ${a.name}`) + strip(a.items);
+  if (mine.items.length) html += head("Your library") + strip(mine.items);
+  // Each provider: one section at the bottom, collapsed unless opened on this device.
+  for (const {p, rows} of provRows) {
+    if (!rows.length) continue;
+    const open = provOpen(p.id);
+    html += `<button class="fold" data-fold="${esc(p.id)}" aria-expanded="${open}">${esc(p.name)} <span>${open ? "Hide" : "Show"} ${rows.length + 1} rows</span></button>`
+      + `<div class="foldbody" data-foldbody="${esc(p.id)}"${open ? "" : " hidden"}>`;
+    for (const r of rows) html += head(r.section, r.node, p.name) + strip(r.items);  // labelled: part of the provider's group, not Home's own rows
+    html += head("All sections", "", p.name) + `<div class="strip"><div class="tile" tabindex="0" data-all="${esc(p.id)}"><div class="art"><span class="ph">Browse every section</span></div><div class="t">Browse every section</div></div></div></div>`;
+  }
+  $("#grid").innerHTML = html;
+  bindTiles(true);
+  $("#grid").querySelectorAll("[data-see]").forEach(a => a.onclick = () => a.dataset.see === "__list" ? showTab("list") : a.dataset.see === "__recs" ? forYou() : open(a.dataset.see, a.dataset.title, true));
+  $("#grid").querySelectorAll("[data-all]").forEach(t => t.onclick = () => sections(t.dataset.all));
+  $("#grid").querySelectorAll("[data-fold]").forEach(b => b.onclick = () => {
+    const body = $("#grid").querySelector(`[data-foldbody="${CSS.escape(b.dataset.fold)}"]`), open = body.hidden;
+    body.hidden = !open; provOpen(b.dataset.fold, open);
+    b.setAttribute("aria-expanded", open);
+    b.querySelector("span").textContent = `${open ? "Hide" : "Show"} ${body.querySelectorAll(".rowhead").length} rows`;
+  });
+}
+// Whether a provider's section is open on Home: per device, a convenience only.
+function provOpen(id, set) {
+  try {
+    if (set !== undefined) localStorage.setItem("provOpen:" + id, set ? "1" : "");
+    return localStorage.getItem("provOpen:" + id) === "1";
+  } catch (e) { return !!set; }
+}
+function heroGo(k, how) { sheet = {jf: false, title: pool[k].title, videos: [pool[k]]}; go(how, 0, true); }
+
+async function sections(pid) {
+  const title = "All of " + ((provs().find(p => p.id === pid) || {}).name || "it");
+  crumbs = [{title, node: "__sections:" + pid}]; renderTrail(); scrollTo(0, 0);
+  const d = await api(P(pid) + "/browse"); pool = [];
+  current = {node: "__sections:" + pid, title, items: d.items, videos: []};
+  $("#grid").innerHTML = d.items.map(i => tile(i)).join(""); bindTiles(true);
+}
+
+// For you (E2): recommendations by category from TMDB, narrowed by apps, language, genre and movies or shows. Titles
+// the house watched in Jellyfin are left out on the Air.
+let recsOpts = null;
+const recsQ = {category: "worth_the_hype", apps: "", language: "any", genre: "", kind: "any"};
+function recTile(i) {
+  return {...i, sub: `★ ${i.rating} · ${i.apps.map(a => a.name).join(", ") || i.year}`, desc: `${i.why} ${i.desc}`};
+}
+async function forYou(change) {
+  Object.assign(recsQ, change || {});
+  crumbs = [{title: "For you", node: "__recs"}]; renderTrail(); scrollTo(0, 0);
+  if (!recsOpts) recsOpts = await api("/api/recs/options").catch(() => null);
+  if (!recsOpts) { $("#grid").innerHTML = `<div class="full mute">Recommendations need the TMDB token (tmdb-token).</div>`; return; }
+  const sel = (key, label, opts) => `<select data-k="${key}" aria-label="${label}">${opts.map(([v, l]) =>
+    `<option value="${esc(v)}"${String(recsQ[key]) === String(v) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const bar = `<div class="full recbar"><div class="chips">${Object.entries(recsOpts.categories).map(([k, l]) =>
+      `<button class="chip${k === recsQ.category ? " on" : ""}" data-cat="${k}">${esc(l)}</button>`).join("")}</div>
+    <div class="recsel">${sel("apps", "Apps", [["", "Your apps"], ["any", "Any app"], ...recsOpts.apps.map(a => [a.key, a.name])])}
+    ${sel("language", "Language", Object.entries(recsOpts.languages))}
+    ${sel("genre", "Genre", [["", "Any genre"], ...recsOpts.genres.map(g => [g, g[0].toUpperCase() + g.slice(1)])])}
+    ${sel("kind", "Movies or shows", [["any", "Movies & shows"], ["movie", "Movies"], ["show", "Shows"]])}</div></div>`;
+  const bind = () => {
+    $("#grid").querySelectorAll("[data-cat]").forEach(b => b.onclick = () => forYou({category: b.dataset.cat}));
+    $("#grid").querySelectorAll(".recsel select").forEach(x => x.onchange = () => forYou({[x.dataset.k]: x.value}));
+  };
+  $("#grid").innerHTML = bar + `<div class="skel full">${"<i></i>".repeat(8)}</div>`; bind();
+  const q = new URLSearchParams(Object.entries(recsQ).filter(([, v]) => v !== ""));
+  let d;
+  try { d = await api("/api/recs?" + q + "&limit=24"); } catch (e) { d = {items: [], error: e.message}; }
+  if (crumbs[0]?.node !== "__recs") return;  // left while it loaded
+  pool = [];
+  const items = d.items.map(recTile);
+  current = {node: "__recs", title: "For you", items, videos: []};
+  $("#grid").innerHTML = bar + (items.length ? items.map(i => tile(i)).join("")
+    : `<div class="full mute" style="margin-top:8px">${esc(d.error || "Nothing matches these filters. Try another category, or fewer filters.")}</div>`);
+  bind(); bindTiles(true);
+}
+
+async function myList() {
+  crumbs = [{title: "My list", node: "__list"}]; renderTrail();
+  const list = await loadList(); pool = [];
+  current = {node: "__list", title: "My list", items: list, videos: []};
+  document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x.dataset.tab === "list"));
+  $("#grid").innerHTML = list.length ? list.map(i => tile(i)).join("")
+    : `<div class="full mute" style="margin-top:8px">Nothing saved yet. Use ＋ My list on a movie, show or channel to keep it here; nothing goes into Jellyfin until you add it.</div>`;
+  // Remove in one tap: ✕ on each poster.
+  $("#grid").querySelectorAll(".tile").forEach((t, n) => {
+    const i = list[n];
+    t.querySelector(".art").insertAdjacentHTML("beforeend", `<button class="rm" aria-label="Remove from My list">✕</button>`);
+    t.querySelector(".rm").onclick = e => { e.stopPropagation(); toggleList(toSave.push(i) - 1); };
+  });
+  bindTiles(true);
+}
+
+// The iPhone's Home Screen app resumes the page it had instead of loading it again, so it would keep an old version
+// after an update. When it comes back to the screen, it asks for the page's version and reloads if it changed
+// (not while a video plays or a sheet is open).
+let pageVersion = null;
+api("/api/version").then(v => pageVersion = v.page).catch(() => {});
+document.addEventListener("visibilitychange", async () => {
+  if (!document.hidden) api("/api/streaming/status").then(r => streaming = r).catch(() => {});
+  if (document.hidden || !pageVersion || $("#player").open || $("#dlg").open) return;
+  try { if ((await api("/api/version")).page !== pageVersion) location.reload(); } catch (e) { /* offline: keep this one */ }
+});
+
+// Connectors: the providers set up here (each with its own section, search and My list entries), Kodi and the TV.
+let connectors = {providers: []};
+const provs = () => connectors.providers || [];
+const P = id => "/api/p/" + enc(id);  // a provider's routes
+const pidOf = node => (node || "").split("~")[0];  // a provider's folder is named <provider id>~<its address>
+api("/api/connectors").catch(() => connectors).then(c => {
+  connectors = c; kodiReady = !!c.kodi;
+  document.documentElement.classList.toggle("noprov", !provs().length);
+  if (provs().length) { provStatus(); setInterval(provStatus, 3000); }
+  open("", "", false);
+  if (location.hash === "#library") showTab("library");  // the setup page's Media step links here
+});
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>

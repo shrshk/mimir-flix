@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>mimir-flix settings</title>
+<style>
+  :root { --bg:#000; --card:#181818; --ink:#f5f5f5; --mute:#a3a3a3; --line:#2a2a2a; --ok:#46d369; --bad:#e50914; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, system-ui, sans-serif;
+         padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px); max-width:720px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:12px; padding:12px 0; }
+  header a { color:var(--mute); text-decoration:none; font-size:14px; }
+  h1 { font-size:20px; margin:0; flex:1; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .card h2 { font-size:16px; margin:0 0 6px; }
+  .line { display:grid; grid-template-columns:22px 1fr; gap:2px 8px; font-size:14px; margin:4px 0; }
+  .line .mark { font-weight:700; } .ok .mark { color:var(--ok); } .bad .mark { color:var(--bad); } .opt .mark { color:var(--mute); }
+  .line .fix { grid-column:2; color:var(--bad); font-size:13px; }
+  .detail { color:var(--mute); }
+  details { margin-top:8px; } summary { cursor:pointer; color:var(--mute); font-size:14px; }
+  form { display:grid; gap:10px; margin-top:10px; }
+  label { display:grid; gap:4px; font-size:13px; color:var(--mute); }
+  input[type=text], input[type=password], input[type=url], select { font:inherit; color:var(--ink); background:#0d0d0d;
+         border:1px solid var(--line); border-radius:8px; padding:9px 10px; width:100%; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .tv { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; border-top:1px solid var(--line); padding-top:10px; }
+  .tv .wide { grid-column:1 / 3; }
+  .checks { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:2px 10px; }
+  .checks label { display:flex; gap:6px; font-size:14px; color:var(--ink); }
+  button, a.btn { font:inherit; font-weight:600; border:0; border-radius:8px; padding:8px 12px; background:var(--ink);
+                  color:#000; text-decoration:none; white-space:nowrap; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--mute); border:1px solid var(--line); }
+  button:disabled { background:#2a2a2a; color:var(--mute); }
+  .msg { font-size:13px; } .msg.bad { color:var(--bad); } .msg.ok { color:var(--ok); }
+  .mute { color:var(--mute); font-size:13px; }
+  .code { font:14px ui-monospace, Menlo, monospace; padding:10px; border:1px dashed var(--line); border-radius:8px; word-break:break-all; user-select:all; }
+  ol.steps { padding-left:20px; margin:6px 0; } ol.steps li { margin:4px 0; }
+  #restart { position:sticky; top:0; z-index:2; background:#2b2205; border:1px solid #6b5410; border-radius:10px;
+             padding:10px 14px; margin-bottom:10px; display:flex; gap:10px; align-items:center; }
+  #restart span { flex:1; font-size:14px; }
+</style>
+</head>
+<body>
+<header><h1>Settings</h1><a href="setup">Setup</a><a href="./">mimir-flix</a></header>
+<div id="restart" hidden><span>Saved. mimir-flix uses it after a restart (a playing video stops for a moment).</span><button id="restartnow">Restart now</button></div>
+<p class="mute" id="lead">Checking what works…</p>
+<div id="cards"></div>
+<script>
+// Each card: what works now (✓ / ✗ with the fix / – not set up) and a form to change it. Secrets are never shown:
+// the page only learns whether a login or token is saved, and an empty password field keeps the saved one.
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let cfg = null, checks = [], ptimer = null;
+
+const CARDS = [
+  {key: "jellyfin", title: "Jellyfin", form: c => `
+    <p class="mute">Sign in as Jellyfin's admin once to make a new key for mimir-flix. The password is not kept.</p>
+    <label>Jellyfin address<input type="url" name="url" value="${esc(c.jellyfin_url)}"></label>
+    <label>Admin user name<input type="text" name="name" autocomplete="username"></label>
+    <label>Admin password<input type="password" name="password" autocomplete="current-password"></label>`},
+  {key: "media", title: "Your media", form: () => `
+    <p class="mute">Libraries and their folders are on the Library page.</p><div class="row"><a class="btn" href="./#library">Open Library</a></div>`, noSave: true},
+  {key: "streaming", title: "Your streaming apps", form: c => `
+    <p class="mute">Search says which of your apps has a title (TMDB). ${c.tmdb_token ? "A token is saved; leave it empty to keep it." : "Free account: themoviedb.org → Settings → API → API Read Access Token."}</p>
+    <label>TMDB token<input type="password" name="token" autocomplete="off"></label>
+    <div class="mute">Your apps (none ticked: every app counts)</div>
+    <div class="checks">${c.all_apps.map(a => `<label class="row"><input type="checkbox" name="app" value="${a.key}" ${c.apps.split(",").map(x => x.trim()).includes(a.key) ? "checked" : ""}> ${esc(a.name)}</label>`).join("")}</div>
+    <label>Country (two letters)<input type="text" name="region" maxlength="2" value="${esc(c.region)}"></label>`},
+  {key: "recs", title: "Recommendations", form: c => `
+    <p class="mute">Applies at once, on the page and for an assistant. Leave everything unticked for no rules.</p>
+    <div class="mute">Never recommend these genres</div>
+    <div class="checks">${(recsOpts?.genres || []).map(g => `<label class="row"><input type="checkbox" name="avoid" value="${esc(g)}" ${c.recs_avoid_genres.includes(g) ? "checked" : ""}> ${esc(g[0].toUpperCase() + g.slice(1))}</label>`).join("") || "<span class='mute'>Needs the TMDB token (Your streaming apps).</span>"}</div>
+    <div class="mute">Only these languages (none ticked: every language)</div>
+    <div class="checks">${Object.entries(recsOpts?.languages || {}).filter(([k]) => k !== "any").map(([k, l]) => `<label class="row"><input type="checkbox" name="lang" value="${k}" ${c.recs_languages.includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div>`},
+  {key: "providers", title: "Providers", noSave: true, form: () => `
+    <p class="mute">IPTV from an M3U playlist or an Xtream Codes login: Jellyfin plays the channels and shows the guide.
+      ${kinds.length ? "Or a provider with its own catalogue, through its installed plugin: its own section on Home, in search and My list." : ""}
+      Logins stay encrypted in mimir-flix and never reach Jellyfin or this page again.</p>
+    <div id="provlist">${providers.map(p => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:8px">
+      <span>${esc(p.name)} <span class="mute">${p.kind === "xtream" ? "Xtream" : p.kind === "m3u" ? "M3U" : esc(p.label || p.kind)}${p.guide ? " · guide" : ""}</span></span>
+      <button type="button" class="ghost" data-rmprov="${esc(p.id)}">Remove</button></div>${(p.info || []).map(i => `<div class="row" style="justify-content:space-between;gap:8px">
+      <span class="mute" style="min-width:0;overflow-wrap:anywhere">${esc(i.label)}: <code>${esc(i.value)}</code></span>
+      <button type="button" class="ghost" data-copy="${esc(i.value)}">Copy</button></div>`).join("")}`).join("") || "<span class='mute'>None yet.</span>"}</div>
+    <label>Name<input type="text" name="pname" placeholder="Home IPTV" maxlength="60"></label>
+    <label>Kind<select name="pkind"><option value="xtream">Xtream Codes (server, username, password)</option><option value="m3u">M3U playlist address</option>${kinds.map(k => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join("")}</select></label>
+    <div data-kind="xtream" style="display:grid;gap:10px">
+      <label>Server<input type="url" name="server" placeholder="http://provider.example:8080"></label>
+      <label>Username<input type="text" name="puser" autocomplete="off"></label>
+      <label>Password<input type="password" name="ppass" autocomplete="off"></label></div>
+    <div data-kind="m3u" style="display:none;gap:10px">
+      <label>Playlist address<input type="url" name="purl" autocomplete="off"></label>
+      <label>Guide (XMLTV) address, optional<input type="url" name="pepg" autocomplete="off"></label></div>
+    ${kinds.map(k => `<div data-kind="${esc(k.kind)}" style="display:none;gap:10px">${k.fields.map(f =>
+      `<label>${esc(f.label)}<input type="${f.key === "password" ? "password" : f.key === "url" ? "url" : "text"}" data-field="${esc(f.key)}" autocomplete="off"></label>`).join("")}</div>`).join("")}
+    <div class="row"><button type="button" id="addprov">Add provider</button></div>`},
+  {key: "tvapp", title: "TV app", noSave: true, form: c => `
+    <p class="mute">mimir-flix on Android TV, Google TV and Fire TV. ${c.tv_apk ? "" : "No app here yet: build it from the mimir-flix-tv repo (its README says how) and copy it into mimir-flix's data folder, tv/."}</p>
+    <ol class="mute" style="margin:0;padding-left:18px;display:grid;gap:4px">
+      <li>On the TV, allow apps from unknown sources (developer options), and install <b>Downloader</b> from its app store.</li>
+      <li>In Downloader, type <b>${esc(tvBase())}/tv/app.apk</b> and install.</li>
+      <li>Open mimir-flix on the TV and type <b>${esc(tvBase())}</b> when it asks where mimir-flix is.</li>
+    </ol>
+    <p class="mute">The TV has no Tailscale: use an address the TV reaches on the home network (this Mac's LAN address, or a
+      LAN https name). Full guide: the mimir-flix-tv README.</p>`},
+  {key: "backup", title: "Backups", form: c => `
+    <p class="mute">Each night at 3:30: mimir-flix's and Jellyfin's settings, lists and watch history (not the videos;
+      no passwords or keys). The newest 7 are kept. Pick a folder that is itself backed up, e.g. on a backed-up drive.</p>
+    <label>Folder on this Mac (empty: off)<input type="text" name="dir" value="${esc(c.backup_dir)}" placeholder="/Volumes/Drive/Backups/mimir-flix"></label>
+    ${c.backups.length ? `<div class="mute">${c.backups.map(b => `${esc(b.name)} · ${Math.round(b.bytes / 1024)} KB`).join("<br>")}</div>` : ""}
+    ${c.backup_dir ? `<div class="row"><button type="button" class="ghost" id="backupnow">Back up now</button></div>` : ""}
+    <div id="offsite">${offsiteBlock(c)}</div>`},
+  {key: "tvs", title: "TVs", form: c => `
+    <p class="mute">The first TV is the default for 📺 TV and the streaming buttons. Pair each TV once: accept the prompt on it.</p>
+    <div id="tvlist">${(c.tvs.length ? c.tvs : [{name: "TV", host: "", kind: "android"}]).map(tvRow).join("")}</div>
+    <div class="row"><button type="button" class="ghost" id="addtv">＋ Add a TV</button></div>
+    <label>Kodi on the TV (optional), e.g. http://192.168.1.20:8080<input type="url" name="kodi_url" value="${esc(c.kodi_url)}"></label>
+    <label>Kodi web password ${c.kodi_password ? "(saved; empty keeps it)" : ""}<input type="password" name="kodi_password" autocomplete="off"></label>`},
+  {key: "phones", title: "Phones", form: c => `
+    <p class="mute">Where phones and the TV's Jellyfin open a provider's links (https when Jellyfin is on an https page).</p>
+    <label>Resolver address<input type="url" name="resolver" value="${esc(c.resolver)}"></label>
+    <label class="row"><input type="checkbox" name="direct" ${c.direct ? "checked" : ""}> Phones open mimir-flix at http://this-mac.local:8723 (no https front door)</label>`},
+];
+
+function tvRow(t) {
+  const p = cfg.pairing[t.host] || {};
+  return `<div class="tv" data-host="${esc(t.host)}">
+    <label>Name<input type="text" name="tvname" value="${esc(t.name)}" maxlength="40"></label>
+    <label>Address<input type="text" name="tvhost" value="${esc(t.host)}" placeholder="192.168.1.20"></label>
+    <button type="button" class="ghost" data-rm aria-label="Remove this TV">✕</button>
+    <label class="wide">Kind<select name="tvkind"><option value="android" ${t.kind !== "fire" ? "selected" : ""}>Android TV / Google TV</option><option value="fire" ${t.kind === "fire" ? "selected" : ""}>Fire TV (Fire Stick)</option></select></label>
+    ${t.host ? `<button type="button" class="ghost" data-pair ${p.running ? "disabled" : ""}>${p.running ? "Look at the TV…" : "Pair"}</button>` : ""}
+    ${p.detail ? `<div class="msg ${p.ok ? "ok" : "bad"} wide">${esc(p.detail)}</div>` : ""}
+  </div>`;
+}
+
+function lines(key) {
+  if (key === "tvapp") return `<div class="line ${cfg.tv_apk ? "ok" : "opt"}"><span class="mark">${cfg.tv_apk ? "✓" : "–"}</span><span>${cfg.tv_apk ? "Ready to install from the TV" : "Not built yet"}</span></div>`;
+  if (key === "backup") {
+    const last = cfg.backups[0];
+    if (cfg.backups_error) return `<div class="line bad"><span class="mark">✗</span><span>${esc(cfg.backups_error)}</span></div>`;
+    const o = cfg.offsite;
+    return `<div class="line ${cfg.backup_dir ? (last ? "ok" : "opt") : "opt"}"><span class="mark">${cfg.backup_dir && last ? "✓" : "–"}</span><span>${cfg.backup_dir ? (last ? `Last: ${esc(last.name)}` : "No backup yet") : "Off"}</span></div>`
+      + `<div class="line ${o.on ? "ok" : "opt"}"><span class="mark">${o.on ? "✓" : "–"}</span><span>Off-site: ${o.on ? `on, encrypted (runs on the <a href="jobs">Jobs page</a>)` : "off"}</span></div>`;
+  }
+  if (key === "recs") {
+    const n = cfg.recs_avoid_genres.length, l = cfg.recs_languages.length;
+    return `<div class="line opt"><span class="mark">–</span><span>${n || l ? `${n ? `Avoiding ${cfg.recs_avoid_genres.map(esc).join(", ")}` : ""}${n && l ? "; " : ""}${l ? `only ${cfg.recs_languages.map(k => recsOpts?.languages?.[k] || k).join(", ")}` : ""}` : "No rules"}</span></div>`;
+  }
+  const mine = checks.filter(r => r.card === key);
+  if (!mine.length) return "";
+  return mine.map(r => `<div class="line ${r.ok === true ? "ok" : r.ok === false ? "bad" : "opt"}">
+    <span class="mark">${r.ok === true ? "✓" : r.ok === false ? "✗" : "–"}</span>
+    <span>${esc(r.name)} <span class="detail">${esc(r.detail)}</span></span>
+    ${r.fix ? `<span class="fix">${esc(r.fix)}</span>` : ""}</div>`).join("");
+}
+
+function render() {
+  const open = new Set([...document.querySelectorAll("details[open]")].map(d => d.dataset.key));
+  $("#restart").hidden = !cfg.restart_needed;
+  $("#cards").innerHTML = CARDS.map(k => `<section class="card"><h2>${k.title}</h2>${lines(k.key)}
+    <details data-key="${k.key}" ${open.has(k.key) ? "open" : ""}><summary>${k.noSave ? "Open" : "Change"}</summary>
+    <form data-card="${k.key}">${k.form(cfg)}
+      ${k.noSave ? "" : `<div class="row"><button type="submit">Save</button>${k.off && k.off(cfg) ? `<button type="button" class="ghost" data-off>Turn off</button>` : ""}</div>`}
+      <div class="msg" data-msg></div></form></details></section>`).join("");
+  bind();
+}
+
+// Off-site: a second copy of the backup folder elsewhere, encrypted on this Mac. The storage is set up once per Mac
+// (the other Mimir apps use it too, each in its own folder); here it is turned on for mimir-flix.
+function offsiteBlock(c) {
+  const o = c.offsite;
+  if (o.on) return `<p>Off-site: <b>on</b>. After each nightly backup the folder goes to ${esc(o.where)}/mimir-flix,
+    encrypted before it leaves this Mac.</p><div class="row"><button type="button" class="ghost" data-offsite="off">Turn off off-site</button></div>`;
+  if (o.configured) return `<p>This Mac already has encrypted off-site storage (${esc(o.where)}). Copy mimir-flix's
+    backups there too, in a folder of their own.</p><div class="row"><button type="button" data-offsite="on">Turn on off-site</button></div>`;
+  return `<p><b>Off-site (optional).</b> A second copy somewhere else, so a dead drive or a lost Mac loses nothing.
+    It goes to your own Backblaze B2 storage, encrypted on this Mac before it leaves (file names too). About $7 per
+    TB a month; the first 10 GB are free, and mimir-flix's backups are a few MB.</p>
+    <details><summary>Set up off-site storage</summary>
+    <ol class="steps">
+      <li>Make a Backblaze account at <a href="https://www.backblaze.com/sign-up/cloud-storage" target="_blank" rel="noopener">backblaze.com</a> (B2 Cloud Storage).</li>
+      <li><b>Buckets → Create a Bucket</b>: any unique name, <b>Private</b>. In its Lifecycle Settings pick "Keep prior versions for this number of days: 30".</li>
+      <li><b>Application Keys → Add a New Application Key</b>: that bucket only, <b>Read and Write</b>. Copy the keyID and the applicationKey (shown once).</li>
+    </ol>
+    <label>Bucket name<input type="text" id="obucket" autocomplete="off"></label>
+    <label>keyID<input type="text" id="okeyid" autocomplete="off"></label>
+    <label>applicationKey<input type="password" id="okey" autocomplete="off"></label>
+    <p class="mute">Where the key goes: ~/.config/rclone/backup.conf on this Mac, readable only by your user. Only the
+      nightly backups read it, and it is sent only to Backblaze. It is checked against the bucket before it is saved,
+      never logged, and not shown again.</p>
+    <div class="row"><button type="button" id="osave">Check and save</button></div></details>`;
+}
+
+function showRecovery(code) {
+  $("#offsite").innerHTML = `<p><b>Save your recovery code.</b> The off-site copy is encrypted with it: without it
+    nobody can restore it, you included. It is shown only now: put it in your password manager, with the bucket name.</p>
+    <div class="code">${esc(code)}</div>
+    <div class="row"><button type="button" class="ghost" id="ocopy">Copy</button></div>
+    <label class="row"><input type="checkbox" id="osaved"> I saved it in my password manager</label>
+    <div class="row"><button type="button" id="odone" disabled>Turn on off-site</button></div>`;
+  $("#ocopy").onclick = async () => { try { await navigator.clipboard.writeText(code); $("#ocopy").textContent = "Copied"; } catch (e) { $("#ocopy").textContent = "Select it"; } };
+  $("#osaved").onchange = e => $("#odone").disabled = !e.target.checked;
+  $("#odone").onclick = () => offsite(true);
+}
+
+async function offsite(on) {
+  const msg = $("#offsite").closest("form").querySelector("[data-msg]");
+  if (!on && !confirm("Turn off the off-site copy? What is already there stays.")) return;
+  if (await send("PUT", "api/settings/offsite", {on}, msg)) { msg.className = "msg ok"; msg.textContent = on ? "Off-site is on: it runs after tonight's backup." : "Off-site is off."; await load(); }
+}
+
+async function send(method, path, body, msg) {
+  if (msg) { msg.className = "msg"; msg.textContent = "Saving…"; }
+  const r = await fetch(path, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const why = typeof out.detail === "string" ? out.detail : "Check the fields";
+    if (msg) { msg.className = "msg bad"; msg.textContent = why; }
+    return null;
+  }
+  return out;
+}
+
+function bind() {
+  document.querySelectorAll("form[data-card]").forEach(f => {
+    const card = f.dataset.card, msg = f.querySelector("[data-msg]");
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(f));
+      let body = data;
+      if (card === "phones") body = {resolver: data.resolver, direct: !!data.direct};
+      if (card === "streaming") body = {token: data.token, region: data.region,
+        apps: [...f.querySelectorAll("[name=app]:checked")].map(x => x.value).join(",")};
+      if (card === "recs") body = {avoid_genres: [...f.querySelectorAll("[name=avoid]:checked")].map(x => x.value),
+        languages: [...f.querySelectorAll("[name=lang]:checked")].map(x => x.value)};
+      if (card === "tvs") body = {
+        tvs: [...f.querySelectorAll(".tv")].map(r => ({name: r.querySelector("[name=tvname]").value.trim() || "TV",
+          host: r.querySelector("[name=tvhost]").value.trim(), kind: r.querySelector("[name=tvkind]").value})).filter(t => t.host),
+        kodi_url: data.kodi_url, kodi_password: data.kodi_password};
+      if (await send("PUT", `api/settings/${card}`, body, msg)) { msg.className = "msg ok"; msg.textContent = "Saved."; await load(); }
+    };
+    f.querySelector("[data-off]")?.addEventListener("click", async () => {
+      if (await send("DELETE", `api/settings/${card}`, null, msg)) load();
+    });
+  });
+  // A plugin's extra lines (e.g. the address and login it serves other players): copied with one tap.
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
+    catch (e) { b.textContent = "Select it"; }
+    setTimeout(() => b.textContent = "Copy", 1500);
+  });
+  const pf = document.querySelector("form[data-card=providers]");
+  if (pf) {
+    const kind = pf.querySelector("[name=pkind]"), msg = pf.querySelector("[data-msg]");
+    kind.onchange = () => pf.querySelectorAll("[data-kind]").forEach(d => d.style.display = d.dataset.kind === kind.value ? "grid" : "none");
+    pf.querySelector("#addprov").onclick = async () => {
+      const v = n => pf.querySelector(`[name=${n}]`).value.trim();
+      const iptv = kind.value === "xtream" || kind.value === "m3u";
+      let body = {name: v("pname"), kind: kind.value, server: v("server"), user: v("puser"), password: pf.querySelector("[name=ppass]").value,
+        url: v("purl"), epg: v("pepg")};
+      if (!iptv) {  // a plugin: the fields it asks for
+        body = {name: v("pname"), kind: kind.value};
+        pf.querySelectorAll(`[data-kind="${CSS.escape(kind.value)}"] [data-field]`).forEach(i => body[i.dataset.field] = i.dataset.field === "password" ? i.value : i.value.trim());
+      }
+      msg.className = "msg"; msg.textContent = iptv ? "Checking the provider and adding it to Jellyfin…" : "Checking the login…";
+      const out = await send("POST", "api/settings/providers", body, msg);
+      if (out) { msg.className = "msg ok"; msg.textContent = iptv ? `Added: ${out.channels} channels. Jellyfin is loading the guide.` : "Added: it shows on Home now."; await loadProviders(); render(); }
+    };
+    pf.querySelectorAll("[data-rmprov]").forEach(b => b.onclick = async () => {
+      if (await send("DELETE", "api/settings/providers/" + b.dataset.rmprov, null, msg) !== null) { await loadProviders(); render(); }
+    });
+  }
+  $("#backupnow")?.addEventListener("click", async e => {
+    const msg = e.target.closest("form").querySelector("[data-msg]");
+    if (await send("POST", "api/jobs/backup/run", null, msg)) { msg.className = "msg ok"; msg.textContent = "Backing up; it shows here in a minute."; setTimeout(load, 8000); }
+  });
+  document.querySelectorAll("[data-offsite]").forEach(b => b.onclick = () => offsite(b.dataset.offsite === "on"));
+  $("#osave")?.addEventListener("click", async e => {
+    const msg = e.target.closest("form").querySelector("[data-msg]");
+    const body = {bucket: $("#obucket").value.trim(), key_id: $("#okeyid").value.trim(), key: $("#okey").value};
+    msg.className = "msg"; msg.textContent = "Checking the key with Backblaze…";
+    const out = await send("POST", "api/settings/offsite/key", body, msg);
+    if (out) { msg.textContent = ""; showRecovery(out.recovery_code); }
+  });
+  $("#addtv")?.addEventListener("click", () => {
+    $("#tvlist").insertAdjacentHTML("beforeend", tvRow({name: "", host: "", kind: "android"}));
+    bindTvRows();
+  });
+  bindTvRows();
+}
+
+function bindTvRows() {
+  document.querySelectorAll(".tv").forEach(r => {
+    r.querySelector("[data-rm]").onclick = () => r.remove();
+    const pair = r.querySelector("[data-pair]");
+    if (pair) pair.onclick = async () => {
+      if (await send("POST", "api/settings/tvs/pair", {host: r.dataset.host}, r.closest("form").querySelector("[data-msg]"))) poll();
+    };
+  });
+}
+
+// While a TV's prompt is up, check every few seconds until someone answers it (90 s at most).
+async function poll() {
+  clearTimeout(ptimer);
+  cfg = await (await fetch("api/settings")).json();
+  render();
+  if (Object.values(cfg.pairing).some(p => p.running)) ptimer = setTimeout(poll, 3000);
+  else loadChecks();
+}
+
+async function loadChecks() {
+  $("#lead").textContent = "Checking what works…";
+  checks = await (await fetch("api/settings/checks")).json();
+  const broken = checks.filter(r => r.ok === false).length;
+  $("#lead").textContent = broken ? `${broken} thing${broken > 1 ? "s" : ""} to fix (✗ below).` : "Everything that is set up works.";
+  render();
+}
+
+// The address a TV on the home network reaches: this page's own unless it is a tailnet name (the TV has no Tailscale),
+// then the address players use (the resolver address in Phones).
+const tvBase = () => /\.ts\.net|^100\./.test(location.hostname) ? (cfg.resolver || location.origin).replace(/\/+$/, "") : location.origin;
+let recsOpts = null;  // genres and languages to choose from (TMDB's own genre list)
+let providers = [], kinds = [];  // the providers set up, and the installed plugins' kinds
+async function loadProviders() {
+  providers = await fetch("api/settings/providers").then(r => r.ok ? r.json() : []).catch(() => []);
+  kinds = await fetch("api/settings/providers/kinds").then(r => r.ok ? r.json() : []).catch(() => []);
+}
+async function load() {
+  if (!recsOpts) recsOpts = await fetch("api/recs/options").then(r => r.ok ? r.json() : null).catch(() => null);
+  await loadProviders();
+  // Never stuck on "Checking…": a settings call that fails or takes too long says so.
+  try {
+    const r = await fetch("api/settings", {signal: AbortSignal.timeout(20000)});
+    if (!r.ok) throw new Error(`mimir-flix answered ${r.status}`);
+    cfg = await r.json();
+  } catch (e) {
+    $("#lead").textContent = `Settings could not be read: ${e.name === "TimeoutError" ? "mimir-flix did not answer in 20 s" : e.message}. Reload to try again.`;
+    return;
+  }
+  render();
+  loadChecks();
+}
+
+$("#restartnow").onclick = async () => {
+  if (!await send("POST", "api/settings/restart")) return;
+  $("#restart").querySelector("span").textContent = "Restarting…";
+  const back = async () => { try { await load(); } catch (e) { setTimeout(back, 1500); } };
+  setTimeout(back, 2500);
+};
+load();
+</script>
+</body>
+</html>
