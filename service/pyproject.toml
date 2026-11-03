@@ -11,6 +11,7 @@ dependencies = [
     "rsa>=4.9",
     "cryptography>=46",
     "jobkit",
+    "qrcode>=8",
 ]
 
 [dependency-groups]

@@ -12,6 +12,9 @@ from pathlib import Path
 DEFAULTS = {
     "host": "127.0.0.1",  # 0.0.0.0 to reach mimir-flix from other devices without an https front door
     "port": 8723,
+    # Phones reach mimir-flix at https://<this Mac's Tailscale name>:<tailnet_port> (tailscale serve, tailnet only),
+    # turned on from Setup or Settings. A port of its own: other apps may serve theirs on the same name.
+    "tailnet_port": 8726,
     "jellyfin_url": "http://127.0.0.1:8096",
     "media_root": "~/Documents/media",  # providers' .strm files: <id>/, <id>-movies/, <id>-live/
     # Names this app is reached by besides addresses, .local and tailnet names, e.g. the one Caddy serves it under

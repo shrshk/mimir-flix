@@ -270,3 +270,60 @@ def test_off_site_backups_are_set_up_once_per_mac_then_turned_on_here(tmp_path, 
 
     lan = TestClient(c.app, client=("192.0.2.30", 5000))
     assert lan.post("/api/settings/offsite/key", json=key).status_code == 403
+
+
+FAKE_TAILSCALE = """#!/bin/sh
+# tailscale: signed in as mac.tail1234.ts.net; what it serves lives in a file next to it
+STATE="$(dirname "$0")/served.json"
+[ -f "$STATE" ] || echo '{}' > "$STATE"
+case "$1 $2" in
+  "status --json") echo '{"BackendState": "Running", "Self": {"DNSName": "mac.tail1234.ts.net."}}' ;;
+  "serve status") cat "$STATE" ;;
+  "serve --bg") /usr/bin/python3 -c 'import json,sys; s,p,t=sys.argv[1],sys.argv[2].split("=")[1],sys.argv[3]; d=json.load(open(s)); d.setdefault("Web",{})["mac.tail1234.ts.net:"+p]={"Handlers":{"/":{"Proxy":t}}}; json.dump(d,open(s,"w"))' "$STATE" "$3" "$4" ;;
+  serve\ --https=*) /usr/bin/python3 -c 'import json,sys; s,p=sys.argv[1],sys.argv[2].split("=")[1]; d=json.load(open(s)); d.get("Web",{}).pop("mac.tail1234.ts.net:"+p,None); json.dump(d,open(s,"w"))' "$STATE" "$2" ;;
+esac
+"""
+
+
+def test_phones_reach_it_on_the_macs_tailscale_name_and_the_tv_on_the_home_network(tmp_path, monkeypatch):
+    c, *_ = setup(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "tailscale").write_text(FAKE_TAILSCALE)
+    (bin_dir / "tailscale").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setattr("mimir_flix.wizard.lan_address", lambda: "192.0.2.10")
+    config = tmp_path / "config"
+    config.mkdir(exist_ok=True)
+    (config / "settings.json").write_text("{}")
+
+    got = c.get("/api/settings").json()
+    assert got["tailnet"] == {
+        "name": "mac.tail1234.ts.net",
+        "port": 8726,
+        "on": False,
+        "url": "https://mac.tail1234.ts.net:8726",
+    }
+    assert got["resolver"] == "http://192.0.2.10:8724" and got["tv_url"] == "http://192.0.2.10:8723"  # no domain
+
+    assert c.put("/api/settings/tailnet", json={"on": True}).json()["on"] is True
+    served = json.loads((bin_dir / "served.json").read_text())["Web"]
+    assert served == {"mac.tail1234.ts.net:8726": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8723"}}}}
+    qr = c.get("/api/settings/tailnet/qr.svg")
+    assert qr.headers["content-type"].startswith("image/svg") and b"<svg" in qr.content
+    # Tailscale names are this app's own names too (no hosts file needed).
+    assert c.get("/api/settings", headers={"Host": "mac.tail1234.ts.net:8726"}).status_code == 200
+
+    lan = TestClient(c.app, client=("192.0.2.30", 5000))
+    assert lan.put("/api/settings/tailnet", json={"on": False}).status_code == 403
+    assert c.put("/api/settings/tailnet", json={"on": False}).json()["on"] is False
+
+    # Another app already on that port: never taken over.
+    (bin_dir / "served.json").write_text(
+        json.dumps({"Web": {"mac.tail1234.ts.net:8726": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:2283"}}}}})
+    )
+    assert c.put("/api/settings/tailnet", json={"on": True}).status_code == 409
+
+    # With a home domain, the TV opens mimir-flix by the resolver's name.
+    (config / "settings.json").write_text(json.dumps({"resolver": "https://lan.home.example.com"}))
+    assert c.get("/api/settings").json()["tv_url"] == "https://lan.home.example.com"

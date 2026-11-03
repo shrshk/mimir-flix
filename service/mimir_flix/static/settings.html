@@ -118,10 +118,13 @@ const CARDS = [
     <div class="row"><button type="button" class="ghost" id="addtv">＋ Add a TV</button></div>
     <label>Kodi on the TV (optional), e.g. http://192.168.1.20:8080<input type="url" name="kodi_url" value="${esc(c.kodi_url)}"></label>
     <label>Kodi web password ${c.kodi_password ? "(saved; empty keeps it)" : ""}<input type="password" name="kodi_password" autocomplete="off"></label>`},
-  {key: "phones", title: "Phones", form: c => `
+  {key: "phones", title: "Phones and the TV", form: c => `
+    <div id="tailnet">${tailnetBlock(c.tailnet)}</div>
+    <p class="mute">The TV has no Tailscale: it opens mimir-flix at <b>${esc(c.tv_url || "this Mac's home address")}</b>
+      (with no domain of your own, tick "on the home network" below so it can).</p>
     <p class="mute">Where phones and the TV's Jellyfin open a provider's links (https when Jellyfin is on an https page).</p>
     <label>Resolver address<input type="url" name="resolver" value="${esc(c.resolver)}"></label>
-    <label class="row"><input type="checkbox" name="direct" ${c.direct ? "checked" : ""}> Phones open mimir-flix at http://this-mac.local:8723 (no https front door)</label>`},
+    <label class="row"><input type="checkbox" name="direct" ${c.direct ? "checked" : ""}> mimir-flix listens on the home network too (http, for the TV)</label>`},
 ];
 
 function tvRow(t) {
@@ -136,7 +139,27 @@ function tvRow(t) {
   </div>`;
 }
 
+// Phones: this Mac's Tailscale name over https, with a QR code to scan (made on this Mac).
+function tailnetBlock(t) {
+  if (t.on) return `<p>Phones open <a href="${esc(t.url)}">${esc(t.url)}</a>: Tailscale on the phone, signed in to
+    the same account, then this link or the code.</p><img src="api/settings/tailnet/qr.svg" alt="QR code of the link" width="160" height="160" style="background:#fff;padding:6px;border-radius:8px">
+    <div class="row"><button type="button" class="ghost" data-tailnet="off">Turn off</button></div>`;
+  if (t.name) return `<p>Phones can reach mimir-flix through Tailscale, at home and away: https on this Mac's name,
+    for your devices only.</p><div class="row"><button type="button" data-tailnet="on">Turn on</button></div>`;
+  return `<p class="mute">Phones reach mimir-flix through Tailscale: install it and sign in on this Mac (<a href="setup">Setup</a>), then turn it on here.</p>`;
+}
+
+async function tailnet(on) {
+  const msg = $("#tailnet").closest("form").querySelector("[data-msg]");
+  if (!on && location.hostname.endsWith(".ts.net") && !confirm("This page came through that link: turning it off cuts this phone off. Turn it off?")) return;
+  if (await send("PUT", "api/settings/tailnet", {on}, msg)) { msg.className = "msg ok"; msg.textContent = on ? "On: open the link on your phone." : "Off."; await load(); }
+}
+
 function lines(key) {
+  if (key === "phones") {
+    const t = cfg.tailnet;
+    return `<div class="line ${t.on ? "ok" : "opt"}"><span class="mark">${t.on ? "✓" : "–"}</span><span>${t.on ? `Phones: ${esc(t.url)}` : "Phones through Tailscale: off"}</span></div>`;
+  }
   if (key === "tvapp") return `<div class="line ${cfg.tv_apk ? "ok" : "opt"}"><span class="mark">${cfg.tv_apk ? "✓" : "–"}</span><span>${cfg.tv_apk ? "Ready to install from the TV" : "Not built yet"}</span></div>`;
   if (key === "backup") {
     const last = cfg.backups[0];
@@ -277,6 +300,7 @@ function bind() {
     const msg = e.target.closest("form").querySelector("[data-msg]");
     if (await send("POST", "api/jobs/backup/run", null, msg)) { msg.className = "msg ok"; msg.textContent = "Backing up; it shows here in a minute."; setTimeout(load, 8000); }
   });
+  document.querySelectorAll("[data-tailnet]").forEach(b => b.onclick = () => tailnet(b.dataset.tailnet === "on"));
   document.querySelectorAll("[data-offsite]").forEach(b => b.onclick = () => offsite(b.dataset.offsite === "on"));
   $("#osave")?.addEventListener("click", async e => {
     const msg = e.target.closest("form").querySelector("[data-msg]");
@@ -321,7 +345,7 @@ async function loadChecks() {
 
 // The address a TV on the home network reaches: this page's own unless it is a tailnet name (the TV has no Tailscale),
 // then the address players use (the resolver address in Phones).
-const tvBase = () => /\.ts\.net|^100\./.test(location.hostname) ? (cfg.resolver || location.origin).replace(/\/+$/, "") : location.origin;
+const tvBase = () => (cfg.tv_url || location.origin).replace(/\/+$/, "");  // the TV has no Tailscale: its own address
 let recsOpts = null;  // genres and languages to choose from (TMDB's own genre list)
 let providers = [], kinds = [];  // the providers set up, and the installed plugins' kinds
 async function loadProviders() {

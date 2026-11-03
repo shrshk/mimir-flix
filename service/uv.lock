@@ -313,7 +313,7 @@ wheels = [
 [[package]]
 name = "jobkit"
 version = "0.1.0"
-source = { git = "https://github.com/shrshk/jobkit#af3bc4141561354aa52dd8827df61318a3f23677" }
+source = { git = "https://github.com/shrshk/jobkit#df9e1218140c27a8e7d4766b89c0def1422371c4" }
 
 [[package]]
 name = "mimir-flix"
@@ -325,6 +325,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jobkit" },
+    { name = "qrcode" },
     { name = "rsa" },
     { name = "uvicorn" },
 ]
@@ -341,6 +342,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jobkit", git = "https://github.com/shrshk/jobkit" },
+    { name = "qrcode", specifier = ">=8" },
     { name = "rsa", specifier = ">=4.9" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
@@ -567,6 +569,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/79/42/bb4641652e58dedeac2ec51abc1f8cae4fee4ec63899a0999016229a0f2a/pytest-9.2.0.tar.gz", hash = "sha256:97c4f3b1f3c7414aa36465e09b8220f1d03627993bd51b1282e193753c80557b", size = 1797555, upload-time = "2026-10-27T21:30:20.728Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/39/1f5d8c8877a0fa327db959c19341d4be61660de1ab6b7391f9eb805bcd67/pytest-9.2.0-py3-none-any.whl", hash = "sha256:07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588", size = 411776, upload-time = "2026-10-27T21:30:19.131Z" },
+]
+
+[[package]]
+name = "qrcode"
+version = "8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/b2/7fc2931bfae0af02d5f53b174e9cf701adbb35f39d69c2af63d4a39f81a9/qrcode-8.2.tar.gz", hash = "sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c", size = 43317, upload-time = "2025-05-01T15:44:24.726Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/b8/d2d6d731733f51684bbf76bf34dab3b70a9148e8f2cef2bb544fccec681a/qrcode-8.2-py3-none-any.whl", hash = "sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f", size = 45986, upload-time = "2025-05-01T15:44:22.781Z" },
 ]
 
 [[package]]

@@ -22,13 +22,17 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
+import qrcode
+import qrcode.image.svg
 from jobkit import offsite as shared_offsite
+from jobkit import prereqs as shared_prereqs
 
 from mimir_flix import backup, checks, settings
 from mimir_flix.catalog import Catalogs
@@ -110,6 +114,21 @@ class TvsSettings(BaseModel):
 class PhonesStep(BaseModel):
     direct: bool = False
     resolver: str = ""
+    tailnet: bool = False  # phones through Tailscale (https on this Mac's Tailscale name)
+
+
+class Tailnet(BaseModel):
+    on: bool
+
+
+def lan_address() -> str:
+    """This Mac's address on the home network (the one its default route uses; nothing is sent), or ""."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))  # a documentation address: only picks the interface
+            return s.getsockname()[0]
+        except OSError:
+            return ""
 
 
 class RecsRules(BaseModel):
@@ -196,9 +215,11 @@ def router(
             "apps": cfg["streaming_apps"],
             "tv_host": settings.default_tv(cfg),
             "resolver": cfg["resolver"]
-            or f"http://{socket.gethostname().removesuffix('.local')}.local:{cfg['resolver_port']}",
+            or f"http://{lan_address() or socket.gethostname().removesuffix('.local') + '.local'}:{cfg['resolver_port']}",
             "backup_dir": cfg["backup_dir"],
-            "offsite": offsite_status(cfg),  # the Mac's shared off-site storage (no secrets), and whether it is on
+            "offsite": offsite_status(cfg),
+            "tailnet": tailnet_status(cfg),
+            "tv_url": tv_url(cfg),  # the Mac's shared off-site storage (no secrets), and whether it is on
         }
 
     def status() -> dict:
@@ -270,6 +291,36 @@ def router(
         if body.resolver and not body.resolver.startswith(("http://", "https://")):
             raise HTTPException(422, "The address starts with http:// or https://")
         settings.save({"host": "0.0.0.0" if body.direct else "127.0.0.1", "resolver": body.resolver}, config)
+        if body.tailnet:
+            tailnet_on(True)
+
+    # Phones: this Mac's Tailscale name over https (tailscale serve: Tailscale's own certificate, the tailnet only,
+    # never Funnel), on a port of mimir-flix's own. The TV has no Tailscale: it uses the home network (tv_url).
+    def tailnet_status(cfg: dict) -> dict:
+        name, port = shared_prereqs.tailscale_name(), cfg["tailnet_port"]
+        on = bool(name) and shared_prereqs.served().get(port, "").rstrip("/") == f"http://127.0.0.1:{cfg['port']}"
+        return {"name": name, "port": port, "on": on, "url": f"https://{name}:{port}" if name else ""}
+
+    def tailnet_on(on: bool) -> dict:
+        cfg = settings.load(config)
+        if not on:
+            shared_prereqs.unserve(cfg["tailnet_port"])
+        else:
+            try:
+                shared_prereqs.serve(cfg["tailnet_port"], f"http://127.0.0.1:{cfg['port']}")
+            except ValueError as e:
+                raise HTTPException(409, str(e)) from e
+        return tailnet_status(cfg)
+
+    def tv_url(cfg: dict) -> str:
+        """Where the TV app opens mimir-flix: the resolver's name when it serves mimir-flix too (a home domain), else
+        this Mac's home address on mimir-flix's own port (which then listens on the home network: "direct")."""
+        r = cfg["resolver"]
+        parts = urlsplit(r) if r else None
+        if parts and parts.port not in (cfg["resolver_port"],):
+            return r.rstrip("/")
+        host = (parts.hostname if parts else "") or lan_address()
+        return f"http://{host}:{cfg['port']}" if host else ""
 
     def start_pairing(host: str) -> None:
         """Asks the TV to trust this Mac: someone accepts the prompt on the TV within 90 seconds."""
@@ -459,6 +510,21 @@ def router(
         settings.save(
             {"offsite": OFFSITE_TO, "rclone_config": str(shared_offsite.CONFIG), "rclone": rclone_cmd(cfg)}, config
         )
+
+    @change.put("/api/settings/tailnet")
+    def set_tailnet(body: Tailnet):
+        """Applies at once (Tailscale keeps it across restarts). Turning it off from a phone that came this way
+        cuts that phone off: the page says so first."""
+        return tailnet_on(body.on)
+
+    @change.get("/api/settings/tailnet/qr.svg")
+    def tailnet_qr():
+        """The phone link as a QR code, made here (nothing is sent anywhere)."""
+        url = tailnet_status(settings.load(config))["url"]
+        if not url:
+            raise HTTPException(409, "Tailscale is not signed in on this Mac")
+        img = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage, border=2)
+        return Response(img.to_string(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
     @change.post("/api/settings/offsite/key")
     def offsite_key(body: OffsiteKey):

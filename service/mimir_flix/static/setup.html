@@ -103,10 +103,11 @@ const FORMS = {
     <label>Kind<select name="kind"><option value="android">Android TV / Google TV</option><option value="fire">Fire TV (Fire Stick)</option></select></label>
     <label>Kodi on the TV (optional), e.g. http://192.168.1.20:8080<input type="url" name="kodi_url"></label>
     <label>Kodi web password<input type="password" name="kodi_password" autocomplete="off"></label>`,
-  phones: d => `<p class="mute">How phones and the TV's Jellyfin reach a provider's links: an address they can open
+  phones: d => `<p class="mute">How phones and the TV reach mimir-flix, and where they and the TV's Jellyfin open a provider's links: an address they can open
     (https when Jellyfin is on an https page).</p>
     <label>Resolver address<input type="url" name="resolver" value="${esc(d.resolver)}"></label>
-    <label class="row"><input type="checkbox" name="direct"> Phones open mimir-flix at http://this-mac.local:8723 (no https front door)</label>`,
+    ${d.tailnet.name ? `<label class="row"><input type="checkbox" name="tailnet" checked> Phones open mimir-flix through Tailscale at ${esc(d.tailnet.url)} (the link and a QR code are on the Settings page)</label>` : `<p class="mute">Tailscale is not signed in on this Mac: phones can be added later, on the Settings page.</p>`}
+    <label class="row"><input type="checkbox" name="direct" checked> mimir-flix listens on the home network too, for the TV (${esc(d.tv_url)})</label>`,
   backup: d => `<p class="mute">Optional. Each night at 3:30, mimir-flix's and Jellyfin's settings, lists and watch
     history (not the videos) go to a folder on this Mac; the newest 7 are kept.</p>
     <label>Backup folder<input type="text" name="dir" value="${esc(d.backup_dir)}" placeholder="/Volumes/Drive/mimir-flix"></label>
@@ -149,7 +150,7 @@ async function wload() {
     f.onsubmit = e => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(f));
-      if (step === "phones") body.direct = !!body.direct;
+      if (step === "phones") { body.direct = !!body.direct; body.tailnet = !!body.tailnet; }
       if (step === "backup") body.offsite = !!body.offsite;
       post(`api/setup/${step}`, step === "media" ? null : body);
     };
