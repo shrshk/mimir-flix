@@ -144,8 +144,9 @@ function tailnetBlock(t) {
   if (t.on) return `<p>Phones open <a href="${esc(t.url)}">${esc(t.url)}</a>: Tailscale on the phone, signed in to
     the same account, then this link or the code.</p><img src="api/settings/tailnet/qr.svg" alt="QR code of the link" width="160" height="160" style="background:#fff;padding:6px;border-radius:8px">
     <div class="row"><button type="button" class="ghost" data-tailnet="off">Turn off</button></div>`;
+  const domain = !/^https?:\/\/[\d.]+(:\d+)?\/?$/.test(cfg.tv_url || "") && cfg.tv_url;  // a name of your own, not an address
   if (t.name) return `<p>Phones can reach mimir-flix through Tailscale, at home and away: https on this Mac's name,
-    for your devices only.</p><div class="row"><button type="button" data-tailnet="on">Turn on</button></div>`;
+    for your devices only.${domain ? " Optional here: your own domain already reaches it." : ""}</p><div class="row"><button type="button" data-tailnet="on">Turn on</button></div>`;
   return `<p class="mute">Phones reach mimir-flix through Tailscale: install it and sign in on this Mac (<a href="setup">Setup</a>), then turn it on here.</p>`;
 }
 
