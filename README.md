@@ -164,7 +164,8 @@ stream servers a provider handed out are relayed.
 
 Safari, Swiftfin's native player and Jellyfin's web app on https need https links, and a Home Screen install
 needs https too. One way: Caddy on this Mac with a wildcard certificate (DNS challenge), names pointing at the
-Mac's Tailscale address, and `lan.<domain>` at its LAN address so the TV (no Tailscale) reaches the resolver:
+Mac's Tailscale address, and `lan.<domain>` at its LAN address so the TV (no Tailscale) reaches the resolver
+(step by step, with the Cloudflare token and DNS records: [Your own domain with Cloudflare](https://gist.github.com/shrshk/58b710264907d1e229675a2313f24b0e)):
 
 ```
 *.home.example.com {
