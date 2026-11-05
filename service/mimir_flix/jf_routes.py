@@ -75,6 +75,9 @@ def card(i: dict) -> dict:
         if i.get("SeriesId") and i.get("SeriesPrimaryImageTag")
         else "",
         "progress": round(100 * pos / i["RunTimeTicks"]) if pos and i.get("RunTimeTicks") else 0,
+        # An episode's show, for its sheet's "Go to show" (Next up, Continue watching, search)
+        "show": f"jf:{i['SeriesId']}" if i.get("SeriesId") else "",
+        "show_title": i.get("SeriesName") or "",
     }
 
 

@@ -643,7 +643,10 @@ function videoSheet(v) {
   const close = `<button class="icon close" onclick="$('#dlg').close()" aria-label="Close">✕</button>`;
   $("#dlgbody").innerHTML = (v.thumb ? `<div class="banner"><img src="${v.thumb}" alt="">${close}</div>` : `<div class="grab"></div><div class="row" style="justify-content:flex-end;padding:6px 8px 0">${close}</div>`)
     + `<div class="body"><h2>${esc(v.title)}</h2>${v.sub ? `<div class="mute">${esc(v.sub)}</div>` : ""}${v.desc ? `<p class="desc">${esc(v.desc)}</p>` : ""}
-      <div class="row acts">${actions(v, 0, "sheet")}</div></div>`;
+      <div class="row acts">${actions(v, 0, "sheet")}${v.show ? `<button class="alt" data-show>Go to show ›</button>` : ""}</div></div>`;
+  // An episode (Next up, Continue watching): its show's page, with the seasons and the other episodes.
+  const toShow = $("#dlgbody [data-show]");
+  if (toShow) toShow.onclick = () => { $("#dlg").close(); open(v.show, v.show_title); };
   $("#dlg").classList.add("sheet");
   $("#dlg").showModal();
 }

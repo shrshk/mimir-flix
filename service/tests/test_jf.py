@@ -331,6 +331,7 @@ def test_home_rows_continue_watching_next_up_and_new_episodes(tmp_path, monkeypa
     rows = c.get("/api/jf/home").json()
     assert [(i["title"], i["progress"]) for i in rows["resume"]] == [("Wedding Film 4K", 25)]
     assert [(i["title"], i["sub"]) for i in rows["next_up"]] == [("Episode 5", "The Traitors (Telugu) · S01E05")]
+    assert (rows["next_up"][0]["show"], rows["next_up"][0]["show_title"]) == ("jf:s1", "The Traitors (Telugu)")
     new = rows["new"][0]
     assert (new["sub"], new["thumb"]) == (
         "The Traitors (Telugu) · S01E07",
