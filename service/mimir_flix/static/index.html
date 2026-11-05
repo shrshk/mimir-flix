@@ -479,7 +479,11 @@ function move(key, held) {
 }
 // A held key repeats faster than the TV lays out the page: at most one step per REPEAT_MS, the rest dropped.
 const REPEAT_MS = 110;
-let lastMove = 0;
+let lastMove = 0, lastKey = 0;
+// TEMPORARY (held-key debugging on the TV): slow frames to logcat
+if (TV && window.PerformanceObserver) try {
+  new PerformanceObserver(l => l.getEntries().forEach(e => console.log(`tvkey slow ${Math.round(e.duration)}ms`))).observe({type: "long-animation-frame"});
+} catch (e) { /* not on this WebView */ }
 function tvFocus() {
   if (!TV) return;
   const all = focusables();
@@ -494,9 +498,13 @@ if (TV) document.addEventListener("keydown", e => {
   if (e.key.startsWith("Arrow") && !(typing && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) {
     e.preventDefault();
     const now = performance.now();
+    // TEMPORARY (held-key debugging on the TV, read from logcat): one line per arrow press
+    console.log(`tvkey ${e.key} rep=${e.repeat} since=${Math.round(now - lastKey)} lag=${Math.round(now - e.timeStamp)} y=${Math.round(scrollY)}`);
+    lastKey = now;
     if (e.repeat && now - lastMove < REPEAT_MS) return;
     lastMove = now;
     move(e.key, e.repeat);
+    console.log(`tvkey moved ${Math.round(performance.now() - now)}ms y=${Math.round(scrollY)}`);
   }
   else if (e.key === "Enter" && document.activeElement && document.activeElement.matches('[tabindex="0"]')) { e.preventDefault(); document.activeElement.click(); }
 });
