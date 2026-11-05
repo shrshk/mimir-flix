@@ -461,13 +461,21 @@ function nearest(key, a, items) {
   for (const {el} of inRow.length ? inRow : items) if (score.has(el) && (!best || score.get(el) < score.get(best))) best = el;
   return best;
 }
-function move(key) {
+// held: the key is held down. Smooth scrolls then start before the last one ends and pile up (the page jerks), so a
+// held key scrolls at once.
+function move(key, held) {
   const all = focusables(), cur = document.activeElement;
   if (!all.includes(cur)) return all[0] && all[0].focus();
   const items = all.filter(el => el !== cur).map(el => ({el, r: el.getBoundingClientRect()}));
   const best = nearest(key, cur.getBoundingClientRect(), items);
-  if (best) { best.focus({preventScroll: true}); best.scrollIntoView({block: "center", inline: "nearest", behavior: "smooth"}); }
+  if (best) {
+    best.focus({preventScroll: true});
+    best.scrollIntoView({block: "center", inline: "nearest", behavior: held ? "instant" : "smooth"});
+  }
 }
+// A held key repeats faster than the TV lays out the page: at most one step per REPEAT_MS, the rest dropped.
+const REPEAT_MS = 110;
+let lastMove = 0;
 function tvFocus() {
   if (!TV) return;
   const all = focusables();
@@ -479,7 +487,13 @@ let lastFocus = null;
 if (TV) document.addEventListener("keydown", e => {
   if (e.key === "Enter" && !$("#dlg").open) lastFocus = document.activeElement;  // where a sheet returns to
   const typing = document.activeElement && document.activeElement.tagName === "INPUT";
-  if (e.key.startsWith("Arrow") && !(typing && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) { e.preventDefault(); move(e.key); }
+  if (e.key.startsWith("Arrow") && !(typing && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) {
+    e.preventDefault();
+    const now = performance.now();
+    if (e.repeat && now - lastMove < REPEAT_MS) return;
+    lastMove = now;
+    move(e.key, e.repeat);
+  }
   else if (e.key === "Enter" && document.activeElement && document.activeElement.matches('[tabindex="0"]')) { e.preventDefault(); document.activeElement.click(); }
 });
 window.tvBack = () => {
