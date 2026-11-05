@@ -501,8 +501,8 @@ if (TV) document.addEventListener("keydown", e => {
     if (e.repeat) document.documentElement.classList.add("held");
     // A slow TV queues a held key's repeats while it draws; they would play out after the key is let go (the focus
     // "keeps going"). A repeat older than STALE_MS when it gets here is dropped.
-    // (An age below 0 or over 3 s is a clock mismatch, not a queue: ignored, so a held key still moves.)
-    const age = now - e.timeStamp, stale = age > STALE_MS && age < 3000;
+    // (An age below 0 or over a minute is a clock mismatch, not a queue: ignored, so a held key still moves.)
+    const age = now - e.timeStamp, stale = age > STALE_MS && age < 60000;
     if (e.repeat && (now - lastMove < REPEAT_MS || stale)) return;
     lastMove = now;
     move(e.key, e.repeat);
