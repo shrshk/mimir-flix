@@ -441,23 +441,31 @@ function visible(el) {
   return r.width > 0 && r.height > 0 && !el.closest("[hidden]") && getComputedStyle(el).visibility !== "hidden";
 }
 function focusables() { return [...($("#dlg").open ? $("#dlg") : document).querySelectorAll(FOCUSABLE)].filter(visible); }
-// The nearest focusable item in the arrow's direction (distance across the direction counts three times as much).
-// Across, the gap between the edges counts, not between the centres: the full-width search box is straight above
-// every poster, not far off to the side of the left column's.
-function move(key) {
-  const all = focusables(), cur = document.activeElement;
-  if (!all.includes(cur)) return all[0] && all[0].focus();
-  const a = cur.getBoundingClientRect(), side = key === "ArrowLeft" || key === "ArrowRight";
-  let best = null, score = Infinity;
-  for (const el of all) {
-    if (el === cur) continue;
-    const b = el.getBoundingClientRect();
+// The nearest item in the arrow's direction, of [{el, r}] (r: its rect), from the rect a (distance across the
+// direction counts three times as much). Across, the gap between the edges counts, not between the centres: the
+// full-width search box is straight above every poster, not far off to the side of the left column's.
+// Left and right stay in the row while it has an item that way: rows that scroll sideways (and tiles of different
+// widths) do not line up in columns, so a poster in the row above could be nearer than the next one in this row.
+function nearest(key, a, items) {
+  const side = key === "ArrowLeft" || key === "ArrowRight";
+  const sameRow = b => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > Math.min(a.height, b.height) / 2;
+  const score = new Map();
+  for (const {el, r: b} of items) {
     const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
     const ahead = {ArrowRight: dx > 4, ArrowLeft: dx < -4, ArrowDown: dy > 4, ArrowUp: dy < -4}[key];
     const gapX = Math.max(0, b.left - a.right, a.left - b.right), gapY = Math.max(0, b.top - a.bottom, a.top - b.bottom);
-    const d = side ? Math.abs(dx) + 3 * gapY + Math.abs(dy) / 100 : Math.abs(dy) + 3 * gapX + Math.abs(dx) / 100;
-    if (ahead && d < score) { score = d; best = el; }
+    if (ahead) score.set(el, side ? Math.abs(dx) + 3 * gapY + Math.abs(dy) / 100 : Math.abs(dy) + 3 * gapX + Math.abs(dx) / 100);
   }
+  const inRow = side ? items.filter(({el, r}) => score.has(el) && sameRow(r)) : [];
+  let best = null;
+  for (const {el} of inRow.length ? inRow : items) if (score.has(el) && (!best || score.get(el) < score.get(best))) best = el;
+  return best;
+}
+function move(key) {
+  const all = focusables(), cur = document.activeElement;
+  if (!all.includes(cur)) return all[0] && all[0].focus();
+  const items = all.filter(el => el !== cur).map(el => ({el, r: el.getBoundingClientRect()}));
+  const best = nearest(key, cur.getBoundingClientRect(), items);
   if (best) { best.focus({preventScroll: true}); best.scrollIntoView({block: "center", inline: "nearest", behavior: "smooth"}); }
 }
 function tvFocus() {
