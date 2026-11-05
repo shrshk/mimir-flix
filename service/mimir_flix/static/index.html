@@ -76,6 +76,12 @@
   .recent h3 { margin:6px 0; font-size:15px; } .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
   .chip { background:#2a2a2a; border-radius:16px; padding:7px 14px; font-weight:500; font-size:14px; }
   .chip.on { background:var(--ink); color:var(--bg); }
+  /* One line that scrolls sideways: search's filters and suggestions leave the screen to the titles. */
+  .chips.line { grid-column:1/-1; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; margin:4px -16px 6px; padding:0 16px; }
+  .chips.line::-webkit-scrollbar { display:none; }
+  .chips.line .chip { flex:none; white-space:nowrap; }
+  .chip small { opacity:.6; margin-left:4px; }
+  @media (min-width:700px) { .chips.line { margin:4px -32px 6px; padding:0 32px; } }
   .recbar { margin:4px 0 6px; } .recsel { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; } .recsel select { width:auto; max-width:46%; }
   .tile { cursor:pointer; display:flex; flex-direction:column; min-width:0; }
   .tile .art { position:relative; aspect-ratio:2/3; border-radius:6px; overflow:hidden; background:linear-gradient(160deg, #2b2b2b, #151515);
@@ -259,7 +265,7 @@ if (new URLSearchParams(location.search).has("tv")) document.documentElement.cla
 </header>
 <main>
 <section id="watch">
-  <div id="searchbar" hidden><input id="q" type="search" placeholder="Search shows, movies, your videos" autocomplete="off" enterkeyhint="search"><div id="sugg" class="chips"></div><div id="idx"></div></div>
+  <div id="searchbar" hidden><input id="q" type="search" placeholder="Search shows, movies, your videos" autocomplete="off" enterkeyhint="search"><div id="sugg" class="chips line"></div><div id="idx"></div></div>
   <div id="pagehead" hidden><button class="icon" id="back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg></button>
     <div class="grow"><h2 id="ptitle2"></h2><div id="trail" class="trail"></div></div></div>
   <div id="grid" class="grid"></div>
@@ -856,6 +862,7 @@ $("#q").addEventListener("input", () => {
     // seconds. null: still searching that source.
     const got = {mine: null, streams: null};
     for (const p of provs()) got["p:" + p.id] = null;
+    let pick = "";  // the group chosen in the filter line; "" is all of them
     const draw = () => {
       if ($("#q").value.trim() !== q) return;
       const waiting = Object.values(got).some(v => v === null);
@@ -869,14 +876,25 @@ $("#q").addEventListener("input", () => {
       const added = new Set(theirs.map(i => i.jf_id).filter(Boolean));
       const mine = (got.mine || []).filter(m => !added.has(m.id));
       const elsewhere = mergeStreaming(got.streams || [], mine.concat(theirs));
-      if (mine.length) html += `<div class="group">Your videos</div>` + mine.map(m => tile(m)).join("");
-      if (elsewhere.length) html += `<div class="group">On your apps</div>` + elsewhere.map(w => tile(w, w.year)).join("");
+      // One grid of titles, best groups first, with a line of filters above it (a chip per group, with its count)
+      // instead of a heading per group: a search over many lists ("telugu") leaves the screen to the titles.
       // Each poster says its section too: the same show is often in several, with different seasons.
-      for (const g of groups) html += `<div class="group">${esc(g.section)}</div>` + g.items.map(i => tile({...i, src: g.src}, [g.section, i.sub].filter(Boolean).join(" · "))).join("");
+      const sections = new Map();
+      const add = (name, tiles) => tiles.length && sections.set(name, (sections.get(name) || []).concat(tiles));
+      add("Your videos", mine.map(m => tile(m)));
+      add("On your apps", elsewhere.map(w => tile(w, w.year)));
+      for (const g of groups) add(g.section, g.items.map(i => tile({...i, src: g.src}, [g.section, i.sub].filter(Boolean).join(" · "))));
+      if (!sections.has(pick)) pick = "";
+      if (sections.size > 1) {
+        const chip = (name, n) => `<button class="chip${name === pick ? " on" : ""}" data-sec="${esc(name)}">${esc(name || "All")}<small>${n}</small></button>`;
+        html += `<div class="chips line">${chip("", [...sections.values()].flat().length)}${[...sections].map(([name, t]) => chip(name, t.length)).join("")}</div>`;
+      }
+      html += (pick ? sections.get(pick) : [...sections.values()].flat()).join("");
       const still = provs().filter(p => got["p:" + p.id] === null).map(p => p.name);
       if (html && waiting) html += `<div class="full mute" style="margin-top:12px">Still searching${still.length ? " " + esc(still.join(", ")) : ""}…</div>`;
       $("#grid").innerHTML = html || (waiting ? `<div class="skel">${"<i></i>".repeat(8)}</div>` : `<div class="full mute">Nothing matches “${esc(q)}”.</div>`);
       crumbs = []; bindTiles(true);
+      $("#grid").querySelectorAll(".chip[data-sec]").forEach(b => b.onclick = () => { pick = b.dataset.sec; draw(); });
     };
     const arrive = (key, p) => p.catch(() => []).then(v => { got[key] = v; draw(); });
     arrive("mine", api("/api/jf/search?q=" + enc(q)));
