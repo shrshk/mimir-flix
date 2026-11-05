@@ -204,6 +204,7 @@
   .tv button:focus, .tv a:focus, .tv input:focus { box-shadow:0 0 0 3px #fff; }
   .tv .tile:focus .art { transform:scale(1.08); box-shadow:0 0 0 3px #fff, 0 8px 24px #000c; }
   .tv .tile:focus .t { color:#fff; }
+  .tv.held .tile .art { transition:none; } .tv.held .tile:focus .art { transform:none; box-shadow:0 0 0 3px #fff; }
   .noprov [data-tab="list"] { display:none; }
   .tv .topnav { display:flex; } .tv .tabbar, .tv #jfl, .tv #tosend, .tv #tosettings { display:none; }
 
@@ -479,11 +480,10 @@ function move(key, held) {
 }
 // A held key repeats faster than the TV lays out the page: at most one step per REPEAT_MS, the rest dropped.
 const REPEAT_MS = 110;
-let lastMove = 0, lastKey = 0;
-// TEMPORARY (held-key debugging on the TV): slow frames to logcat
-if (TV && window.PerformanceObserver) try {
-  new PerformanceObserver(l => l.getEntries().forEach(e => console.log(`tvkey slow ${Math.round(e.duration)}ms`))).observe({type: "long-animation-frame"});
-} catch (e) { /* not on this WebView */ }
+const STALE_MS = 120;
+let lastMove = 0;
+// While a key is held, the focused poster skips its zoom and soft shadow (costly on a TV's GPU at each step).
+if (TV) document.addEventListener("keyup", () => document.documentElement.classList.remove("held"));
 function tvFocus() {
   if (!TV) return;
   const all = focusables();
@@ -498,13 +498,14 @@ if (TV) document.addEventListener("keydown", e => {
   if (e.key.startsWith("Arrow") && !(typing && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) {
     e.preventDefault();
     const now = performance.now();
-    // TEMPORARY (held-key debugging on the TV, read from logcat): one line per arrow press
-    console.log(`tvkey ${e.key} rep=${e.repeat} since=${Math.round(now - lastKey)} lag=${Math.round(now - e.timeStamp)} y=${Math.round(scrollY)}`);
-    lastKey = now;
-    if (e.repeat && now - lastMove < REPEAT_MS) return;
+    if (e.repeat) document.documentElement.classList.add("held");
+    // A slow TV queues a held key's repeats while it draws; they would play out after the key is let go (the focus
+    // "keeps going"). A repeat older than STALE_MS when it gets here is dropped.
+    // (An age below 0 or over 3 s is a clock mismatch, not a queue: ignored, so a held key still moves.)
+    const age = now - e.timeStamp, stale = age > STALE_MS && age < 3000;
+    if (e.repeat && (now - lastMove < REPEAT_MS || stale)) return;
     lastMove = now;
     move(e.key, e.repeat);
-    console.log(`tvkey moved ${Math.round(performance.now() - now)}ms y=${Math.round(scrollY)}`);
   }
   else if (e.key === "Enter" && document.activeElement && document.activeElement.matches('[tabindex="0"]')) { e.preventDefault(); document.activeElement.click(); }
 });
@@ -532,7 +533,7 @@ function toast(msg, id, play) {
 let pool = [];  // videos shown as tiles (rows and search), opened by index
 function tile(i, sub) {
   // The title is drawn on the poster too: it shows when there is no artwork (or it fails to load).
-  const img = i.thumb ? `<img loading="lazy" src="${i.thumb}" alt="" onerror="this.remove()">` : "";
+  const img = i.thumb ? `<img loading="lazy" decoding="async" src="${i.thumb}" alt="" onerror="this.remove()">` : "";
   const attrs = i.kind === "folder" ? `data-node="${esc(i.node || "")}"` : `data-video="${pool.push(i) - 1}"`;
   const line = sub || i.sub || "";
   // Where it plays: the house's apps, and the provider for its results (both when its title is on an app too).
