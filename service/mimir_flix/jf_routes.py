@@ -132,6 +132,29 @@ def router(
         # TvChannel: live channels from an IPTV provider (M2), played by Jellyfin's Live TV
         return [card(i) for i in guard(jf.search, q) if i.get("Type") in PLAYABLE | {"Series", "Folder", "TvChannel"}]
 
+    @api.get("/api/jf/title")
+    def title_page(id: str = Query(pattern=ID)):
+        """A movie's page: its details, and the library's titles like it (empty when Jellyfin cannot say)."""
+        i = guard(jf.details, id)
+        try:
+            more = [card(x) for x in jf.similar(id) if x.get("Type") in PLAYABLE | {"Series"}]
+        except JellyfinError:
+            more = []
+        people = i.get("People") or []
+        return card(i) | {
+            "year": i.get("ProductionYear") or "",
+            "minutes": round(i["RunTimeTicks"] / 6e8) if i.get("RunTimeTicks") else 0,
+            "rating": i.get("OfficialRating") or "",
+            "score": round(i["CommunityRating"], 1) if i.get("CommunityRating") else "",
+            "genres": i.get("Genres") or [],
+            "cast": [p["Name"] for p in people if p.get("Type") == "Actor"][:8],
+            "directors": [p["Name"] for p in people if p.get("Type") == "Director"],
+            "backdrop": f"/jf/Items/{id}/Images/Backdrop?maxWidth=1280&quality=85"
+            if i.get("BackdropImageTags")
+            else "",
+            "more": more,
+        }
+
     @api.get("/api/jf/home")
     def home_rows():
         """Home's own rows from Jellyfin: Continue watching, Next up, New episodes (a row that fails is empty)."""

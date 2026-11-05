@@ -38,6 +38,7 @@ def item(id_, name, type_, container="mp4", video="h264", audio="aac", **kw):
 
 
 SHOW, EP1, EP2 = "3" * 32, "1" * 32, "2" * 32
+FILM, LIKE_IT = "4" * 32, "5" * 32
 ITEMS = {
     MOVIE: item(MOVIE, "Wedding Film 4K", "Video"),
     EP1: item(EP1, "Pilot", "Episode", SeriesId=SHOW, SeriesName="A Show", ParentIndexNumber=1, IndexNumber=1),
@@ -45,6 +46,23 @@ ITEMS = {
     CLIP: item(CLIP, "Old clip", "Video", container="avi", video="mpeg4", audio="mp3"),
     HOME: item(HOME, "Home Videos", "CollectionFolder"),
     "9" * 32: item("9" * 32, "NDTV 24x7", "TvChannel"),  # a live channel from an IPTV provider
+    FILM: item(
+        FILM,
+        "Kalki 2898 AD",
+        "Movie",
+        ProductionYear=2024,
+        OfficialRating="UA",
+        CommunityRating=7.46,
+        Genres=["Science Fiction", "Action"],
+        People=[
+            {"Name": "Prabhas", "Type": "Actor"},
+            {"Name": "Deepika Padukone", "Type": "Actor"},
+            {"Name": "Nag Ashwin", "Type": "Director"},
+            {"Name": "C. Ashwini Dutt", "Type": "Producer"},
+        ],
+        BackdropImageTags=["b"],
+    ),
+    LIKE_IT: item(LIKE_IT, "Salaar", "Movie", ProductionYear=2023),
 }
 
 
@@ -71,6 +89,10 @@ def fake(request: httpx.Request) -> httpx.Response:
                 ]
             },
         )
+    if p == f"/Items/{FILM}/Similar":
+        return httpx.Response(200, json={"Items": [ITEMS[LIKE_IT], ITEMS["9" * 32]]})  # a channel is no movie
+    if p.endswith("/Similar"):
+        return httpx.Response(500, text="boom")
     if p == "/Items" and "Ids" in q:
         return httpx.Response(200, json={"Items": [ITEMS[q["Ids"]]] if q["Ids"] in ITEMS else []})
     if p == "/Items" and "ParentId" in q:
@@ -398,3 +420,24 @@ def test_play_here_goes_on_to_the_next_episode(tmp_path):
     assert (nxt["id"], nxt["title"], nxt["sub"]) == (EP2, "Second", "A Show · S01E02 · 60 min")
     assert c.get(f"/api/jf/next/{EP2}").json() == {}  # the last one
     assert c.get(f"/api/jf/next/{MOVIE}").json() == {}  # not an episode
+
+
+def test_a_movie_page_has_its_details_and_the_librarys_titles_like_it(tmp_path):
+    _, c, _ = setup(tmp_path)
+    page = c.get("/api/jf/title", params={"id": FILM}).json()
+    assert (page["title"], page["year"], page["minutes"], page["rating"], page["score"]) == (
+        "Kalki 2898 AD",
+        2024,
+        60,
+        "UA",
+        7.5,
+    )
+    assert page["genres"] == ["Science Fiction", "Action"] and page["directors"] == ["Nag Ashwin"]
+    assert page["cast"] == ["Prabhas", "Deepika Padukone"]  # actors only: the producer is not cast
+    assert page["backdrop"] == f"/jf/Items/{FILM}/Images/Backdrop?maxWidth=1280&quality=85"
+    assert [m["title"] for m in page["more"]] == ["Salaar"]
+    # Jellyfin failing the titles like it still shows the page; an id that is not one is refused before Jellyfin.
+    other = c.get("/api/jf/title", params={"id": LIKE_IT}).json()
+    assert other["more"] == [] and other["backdrop"] == "" and other["cast"] == []
+    assert c.get("/api/jf/title", params={"id": "../Users"}).status_code == 422
+    assert c.get("/api/jf/title", params={"id": "6" * 32}).status_code in (404, 502)

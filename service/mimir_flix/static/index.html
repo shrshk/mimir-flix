@@ -643,10 +643,11 @@ function videoSheet(v) {
   const close = `<button class="icon close" onclick="$('#dlg').close()" aria-label="Close">✕</button>`;
   $("#dlgbody").innerHTML = (v.thumb ? `<div class="banner"><img src="${v.thumb}" alt="">${close}</div>` : `<div class="grab"></div><div class="row" style="justify-content:flex-end;padding:6px 8px 0">${close}</div>`)
     + `<div class="body"><h2>${esc(v.title)}</h2>${v.sub ? `<div class="mute">${esc(v.sub)}</div>` : ""}${v.desc ? `<p class="desc">${esc(v.desc)}</p>` : ""}
-      <div class="row acts">${actions(v, 0, "sheet")}${v.show ? `<button class="alt" data-show>Go to show ›</button>` : ""}</div></div>`;
-  // An episode (Next up, Continue watching): its show's page, with the seasons and the other episodes.
+      <div class="row acts">${actions(v, 0, "sheet")}${v.show ? `<button class="alt" data-show>Go to show ›</button>` : v.id && v.type === "Movie" && current.node !== "jfmovie:" + v.id ? `<button class="alt" data-show>Go to movie ›</button>` : ""}</div></div>`;
+  // An episode (Next up, Continue watching): its show's page, with the seasons and the other episodes; a movie: its
+  // own page.
   const toShow = $("#dlgbody [data-show]");
-  if (toShow) toShow.onclick = () => { $("#dlg").close(); open(v.show, v.show_title); };
+  if (toShow) toShow.onclick = () => { $("#dlg").close(); v.show ? open(v.show, v.show_title) : open("jfmovie:" + v.id, v.title); };
   $("#dlg").classList.add("sheet");
   $("#dlg").showModal();
 }
@@ -740,6 +741,7 @@ async function open(node, title, push = true) {
     if (!node) return home();
     if (node.startsWith("__sections:")) return sections(node.slice(11));
     if (node === "__list") return myList();
+    if (node.startsWith("jfmovie:")) return moviePage(node.slice(8));
     const jfNode = node.startsWith("jf:");
     const d = jfNode ? await api("/api/jf/browse?id=" + enc(node.slice(3))) : await api(P(pidOf(node)) + "/browse?node=" + enc(node));
     const folders = d.items.filter(i => i.kind === "folder"), videos = d.items.filter(i => i.kind === "video");
@@ -757,6 +759,24 @@ async function open(node, title, push = true) {
     $("#grid").innerHTML = html || `<div class="full mute">Nothing here.</div>`;
     bindTiles(true);
   } catch (e) { $("#grid").innerHTML = `<div class="full err">${esc(e.message)}</div>`; }
+}
+
+// A movie's own page: its artwork, facts, play buttons and My list, who is in it, and the library's titles like it.
+async function moviePage(id) {
+  const m = await api("/api/jf/title?id=" + enc(id));
+  pool = [];
+  current = {node: "jfmovie:" + id, title: m.title, items: [], videos: [m], jf: true, jf_id: m.id};
+  const facts = [m.year, m.minutes ? `${m.minutes} min` : "", m.rating, m.score ? `★ ${m.score}` : "", m.genres.join(", "),
+    m.progress ? `${m.progress}% watched` : ""].filter(Boolean).join(" · ");
+  const art = m.backdrop || big(m.thumb);
+  let html = `<div class="hero">${art ? `<img src="${art}" alt="">` : ""}<div class="in"><h2>${esc(m.title)}</h2>${facts ? `<div class="s">${esc(facts)}</div>` : ""}
+    <div class="row big">${playActions(m, 0)}${listBtn({jf: m.id, title: m.title})}</div></div></div>`;
+  if (m.desc) html += `<div class="showbar"><div class="mute">${esc(m.desc)}</div></div>`;
+  const people = [m.directors.length ? `Director: ${m.directors.join(", ")}` : "", m.cast.length ? `Cast: ${m.cast.join(", ")}` : ""].filter(Boolean);
+  if (people.length) html += `<div class="full mute">${people.map(esc).join("<br>")}</div>`;
+  if (m.more.length) html += `<div class="rowhead"><h3>More like this</h3></div><div class="strip">${m.more.map(i => tile(i)).join("")}</div>`;
+  $("#grid").innerHTML = html;
+  bindTiles(true);
 }
 
 // Play here tells Jellyfin what is watched (through the Air): where it was left and what was finished, so Continue

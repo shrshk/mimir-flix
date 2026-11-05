@@ -106,6 +106,21 @@ class Jellyfin:
             raise JellyfinMissing("no such item")
         return items[0]
 
+    DETAIL_FIELDS = FIELDS + ",Genres,People,OfficialRating,CommunityRating"
+
+    def details(self, item_id: str) -> dict:
+        """One title with what its page shows: genres, cast and crew, ratings, and where it was left."""
+        params = {"Ids": item_id, "Fields": self.DETAIL_FIELDS, "userId": self.user()}
+        items = (self._call("GET", "/Items", params) or {}).get("Items", [])
+        if not items:
+            raise JellyfinMissing("no such item")
+        return items[0]
+
+    def similar(self, item_id: str, limit: int = 12) -> list[dict]:
+        """The library's titles like this one, by Jellyfin's own measure (genres, people, tags)."""
+        params = {"userId": self.user(), "Limit": str(limit), "Fields": self.FIELDS}
+        return (self._call("GET", f"/Items/{item_id}/Similar", params) or {}).get("Items", [])
+
     def raw(self, path: str, params: dict, headers: dict) -> httpx.Response:
         """A streamed passthrough (video bytes, HLS playlists, images); the caller closes it."""
         try:
