@@ -456,17 +456,21 @@ function nearest(key, a, items) {
     const gapX = Math.max(0, b.left - a.right, a.left - b.right), gapY = Math.max(0, b.top - a.bottom, a.top - b.bottom);
     if (ahead) score.set(el, side ? Math.abs(dx) + 3 * gapY + Math.abs(dy) / 100 : Math.abs(dy) + 3 * gapX + Math.abs(dx) / 100);
   }
-  const inRow = side ? items.filter(({el, r}) => score.has(el) && sameRow(r)) : [];
+  // Up and down skip the bars pinned at the top (pinned: true) while the page has an item that way: the row above is
+  // off screen when the focus is mid-screen, so the top bar would be nearer and a held key would bounce through it.
+  const inRow = side ? items.filter(({el, r}) => score.has(el) && sameRow(r))
+    : items.filter(({el, pinned}) => score.has(el) && !pinned);
   let best = null;
   for (const {el} of inRow.length ? inRow : items) if (score.has(el) && (!best || score.get(el) < score.get(best))) best = el;
   return best;
 }
+const PINNED = "header, #searchbar";  // stay on screen while the page scrolls
 // held: the key is held down. Smooth scrolls then start before the last one ends and pile up (the page jerks), so a
 // held key scrolls at once.
 function move(key, held) {
   const all = focusables(), cur = document.activeElement;
   if (!all.includes(cur)) return all[0] && all[0].focus();
-  const items = all.filter(el => el !== cur).map(el => ({el, r: el.getBoundingClientRect()}));
+  const items = all.filter(el => el !== cur).map(el => ({el, r: el.getBoundingClientRect(), pinned: !!el.closest(PINNED)}));
   const best = nearest(key, cur.getBoundingClientRect(), items);
   if (best) {
     best.focus({preventScroll: true});
@@ -732,11 +736,11 @@ function markAdded(ctx, v, id, fromSheet) {
 }
 function reloadPage() { if (current && current.node) { const y = scrollY; open(current.node, current.title, false).then(() => scrollTo(0, y)); } }
 
-function bindTiles(push) {
+function bindTiles(push, refocus = true) {
   const searching = !!$("#q").value.trim() && !crumbs.length;
   $("#grid").querySelectorAll(".tile[data-node]").forEach(t => t.onclick = () => { if (searching) rememberSearch(); open(t.dataset.node, t.dataset.title, push); });
   $("#grid").querySelectorAll(".tile[data-video]").forEach(t => t.onclick = () => { if (searching) rememberSearch(); videoSheet(pool[+t.dataset.video]); });
-  if (document.activeElement !== $("#q")) tvFocus();  // TV: the new page's first item (not while typing a search)
+  if (refocus && document.activeElement !== $("#q")) tvFocus();  // TV: the new page's first item (not while typing a search)
 }
 
 function renderTrail() {
@@ -975,19 +979,25 @@ async function home() {
   const head = (title, node, src) => `<div class="rowhead${src ? " sub" : ""}"><h3>${esc(title)}</h3>${node ? `<a data-see="${esc(node)}" data-title="${esc(title)}">See all ›</a>` : ""}</div>`;
   const strip = items => `<div class="strip">${items.map(i => tile(i)).join("")}</div>`;
   $("#grid").innerHTML = `<div class="skel">${"<i></i>".repeat(8)}</div>`;
-  const [mine, provRows, list, trending, apps, jfRows, recs] = await Promise.all([
+  const gen = ++homeGen;
+  const still = () => gen === homeGen && current.title === "Home" && !crumbs.length && !$("#q").value.trim();
+  // The providers' rows are the slowest to come (they ask the provider) and sit at the bottom, collapsed: Home shows
+  // without them and adds them when they come.
+  const provP = Promise.all(provs().map(p => api(P(p.id) + "/home").then(rows => ({p, rows})).catch(e => { toast(e.message); return {p, rows: []}; })));
+  const [mine, list, trending, apps, jfRows, recs] = await Promise.all([
     api("/api/jf/browse").catch(() => ({items: []})),
-    Promise.all(provs().map(p => api(P(p.id) + "/home").then(rows => ({p, rows})).catch(e => { toast(e.message); return {p, rows: []}; }))),
     loadList(),
     api("/api/streaming/trending").catch(() => []),
     api("/api/streaming/rows").catch(() => []),
     api("/api/jf/home").catch(() => ({resume: [], next_up: [], new: []})),
     api("/api/recs?category=worth_the_hype&limit=15").catch(() => ({items: []})),
   ]);
-  if (current.title !== "Home" || crumbs.length || $("#q").value.trim()) return;
+  if (!still()) return;
   // Featured: the top title trending on the house's apps (TMDB, its wide backdrop on wide screens), else the first
-  // provider video with artwork.
+  // provider video with artwork (then Home waits for the providers' rows).
   const top = trending.find(t => t.backdrop || t.thumb);
+  const provRows = top ? null : await provP;
+  if (!still()) return;
   let html = "";
   if (top) {
     const k = pool.push(top) - 1;
@@ -1017,16 +1027,31 @@ async function home() {
   for (const a of apps) html += head(`Popular on ${a.name}`) + strip(a.items);
   if (mine.items.length) html += head("Your library") + strip(mine.items);
   // Each provider: one section at the bottom, collapsed unless opened on this device.
-  for (const {p, rows} of provRows) {
-    if (!rows.length) continue;
-    const open = provOpen(p.id);
-    html += `<button class="fold" data-fold="${esc(p.id)}" aria-expanded="${open}">${esc(p.name)} <span>${open ? "Hide" : "Show"} ${rows.length + 1} rows</span></button>`
-      + `<div class="foldbody" data-foldbody="${esc(p.id)}"${open ? "" : " hidden"}>`;
-    for (const r of rows) html += head(r.section, r.node, p.name) + strip(r.items);  // labelled: part of the provider's group, not Home's own rows
-    html += head("All sections", "", p.name) + `<div class="strip"><div class="tile" tabindex="0" data-all="${esc(p.id)}"><div class="art"><span class="ph">Browse every section</span></div><div class="t">Browse every section</div></div></div></div>`;
-  }
-  $("#grid").innerHTML = html;
+  const provHtml = provRows => {
+    let html = "";
+    for (const {p, rows} of provRows) {
+      if (!rows.length) continue;
+      const open = provOpen(p.id);
+      html += `<button class="fold" data-fold="${esc(p.id)}" aria-expanded="${open}">${esc(p.name)} <span>${open ? "Hide" : "Show"} ${rows.length + 1} rows</span></button>`
+        + `<div class="foldbody" data-foldbody="${esc(p.id)}"${open ? "" : " hidden"}>`;
+      for (const r of rows) html += head(r.section, r.node, p.name) + strip(r.items);  // labelled: part of the provider's group, not Home's own rows
+      html += head("All sections", "", p.name) + `<div class="strip"><div class="tile" tabindex="0" data-all="${esc(p.id)}"><div class="art"><span class="ph">Browse every section</span></div><div class="t">Browse every section</div></div></div></div>`;
+    }
+    return html;
+  };
+  $("#grid").innerHTML = html + (provRows ? provHtml(provRows) : "");
   bindTiles(true);
+  bindHome();
+  if (provRows) return;
+  const later = await provP;
+  if (!still()) return;
+  $("#grid").insertAdjacentHTML("beforeend", provHtml(later));
+  bindTiles(true, false);  // the focus stays where the remote has it
+  bindHome();
+}
+let homeGen = 0;  // a newer Home drops what an older one was still waiting for
+// Home's links, "Browse every section" tiles and the providers' Show/Hide (again after the providers' rows come)
+function bindHome() {
   $("#grid").querySelectorAll("[data-see]").forEach(a => a.onclick = () => a.dataset.see === "__list" ? showTab("list") : a.dataset.see === "__recs" ? forYou() : open(a.dataset.see, a.dataset.title, true));
   $("#grid").querySelectorAll("[data-all]").forEach(t => t.onclick = () => sections(t.dataset.all));
   $("#grid").querySelectorAll("[data-fold]").forEach(b => b.onclick = () => {
