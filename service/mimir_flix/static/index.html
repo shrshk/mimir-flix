@@ -17,8 +17,11 @@
           --tabbar:56px; --poster:112px; }
   @media (min-width:700px) { :root { --poster:150px; } }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html { background:var(--bg); }
-  body { margin:0; font:15px/1.45 -apple-system, "Helvetica Neue", system-ui, sans-serif; background:var(--bg); color:var(--ink); overscroll-behavior-y:none; }
+  /* The page never moves sideways (only the rows do): clip, not hidden, so the sticky header keeps working; no
+     sideways bounce on iOS when a vertical swipe drifts. */
+  html { background:var(--bg); overflow-x:clip; overscroll-behavior-x:none; }
+  body { margin:0; font:15px/1.45 -apple-system, "Helvetica Neue", system-ui, sans-serif; background:var(--bg); color:var(--ink); overscroll-behavior-y:none;
+         overflow-x:clip; overscroll-behavior-x:none; }
   a { color:inherit; }
 
   /* Header: logo, top tabs (wide screens), search */
@@ -68,7 +71,7 @@
   .rowhead { grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin:14px 0 -6px; }
   .rowhead h3 { margin:0; font-size:17px; font-weight:700; } .rowhead a { font-size:13px; color:var(--mute); cursor:pointer; white-space:nowrap; }
   .strip { grid-column:1/-1; display:grid; grid-auto-flow:column; grid-auto-columns:var(--poster); gap:8px; overflow-x:auto; margin:0 -16px; padding:0 16px 4px;
-           scroll-snap-type:x mandatory; scroll-padding:0 16px; scrollbar-width:none; }
+           overscroll-behavior-x:contain; scroll-snap-type:x proximity; scroll-padding:0 16px; scrollbar-width:none; }
   .strip::-webkit-scrollbar { display:none; }
   @media (min-width:700px) { .strip { margin:0 -32px; padding:0 32px 4px; scroll-padding:0 32px; } }
   .strip .tile { scroll-snap-align:start; }
@@ -77,7 +80,7 @@
   .chip { background:#2a2a2a; border-radius:16px; padding:7px 14px; font-weight:500; font-size:14px; }
   .chip.on { background:var(--ink); color:var(--bg); }
   /* One line that scrolls sideways: search's filters and suggestions leave the screen to the titles. */
-  .chips.line { grid-column:1/-1; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; margin:4px -16px 6px; padding:0 16px; }
+  .chips.line { grid-column:1/-1; flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; margin:4px -16px 6px; padding:0 16px; }
   .chips.line::-webkit-scrollbar { display:none; }
   .chips.line .chip { flex:none; white-space:nowrap; }
   .chip small { opacity:.6; margin-left:4px; }

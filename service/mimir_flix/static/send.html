@@ -19,6 +19,7 @@
   button, .file { font:inherit; font-weight:600; border:0; border-radius:8px; padding:10px 12px; background:#2a2a2a; color:var(--ink); }
   button.on, button.p { background:var(--ink); color:#000; }
   .pane[hidden] { display:none; }
+  select { font:inherit; border:0; border-radius:8px; padding:8px 10px; background:#2a2a2a; color:var(--ink); }
   canvas { width:100%; aspect-ratio:16/9; background:#111; border:1px solid var(--line); border-radius:10px; touch-action:none; display:block; }
   .tools { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
   .sw { width:30px; height:30px; border-radius:50%; border:2px solid transparent; padding:0; }
@@ -41,7 +42,13 @@
     <button id="size">Thin</button>
     <button id="clear">Clear</button>
   </div>
-  <div class="mute">The TV draws along as you draw, over whatever is on, and lets go a few seconds after you stop.</div>
+  <div class="tools">
+    <label class="mute">Pad <select id="shape"><option value="wide">Wide (the TV's shape)</option><option value="tall">Tall (more room)</option></select></label>
+    <label class="mute">On TV <select id="hold"><option value="3">3 s</option><option value="6">6 s</option><option value="15">15 s</option>
+      <option value="30">30 s</option><option value="60">1 min</option><option value="300">5 min</option><option value="0">Until cleared</option></select></label>
+  </div>
+  <div class="mute">The TV draws along as you draw, over whatever is on, and lets go after the "On TV" time (Clear takes it
+    off at once). A tall pad shows in the middle of the TV, the same shape. Both settings stay on this phone.</div>
 </section>
 
 <section class="pane" id="photo" hidden>
@@ -74,13 +81,32 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 const COLORS = ["#ffffff", "#ffd60a", "#ff375f", "#30d158", "#0a84ff", "#bf5af2"];
 const SIZES = [["Thin", 0.006], ["Medium", 0.012], ["Bold", 0.024]];
 let color = COLORS[0], size = 0, strokeId = 0, live = null, pending = [], strokes = [];
+// Pad shape and how long the TV keeps the drawing: this phone's choice, remembered here only.
+const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+               set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: not remembered */ } }};
+let shape = store.get("send.shape", "wide"), hold = Number(store.get("send.hold", "6")), aspect = 16 / 9, fitW = 0;
+$("#shape").value = shape; $("#hold").value = String(hold);
+if (!$("#hold").value) { hold = 6; $("#hold").value = "6"; }
+$("#shape").onchange = () => { shape = $("#shape").value; store.set("send.shape", shape); fitW = 0; clearAll(); fit(); };
+$("#hold").onchange = () => { hold = Number($("#hold").value); store.set("send.hold", String(hold)); };
 $("#swatches").innerHTML = COLORS.map((c, i) => `<button class="sw${i ? "" : " on"}" style="background:${c}" data-c="${c}"></button>`).join(" ");
 $("#swatches").onclick = e => { const b = e.target.closest(".sw"); if (!b) return; color = b.dataset.c; document.querySelectorAll(".sw").forEach(x => x.classList.toggle("on", x === b)); };
 $("#size").onclick = () => { size = (size + 1) % SIZES.length; $("#size").textContent = SIZES[size][0]; };
 
 const pad = $("#pad"), ctx = pad.getContext("2d");
 function fit() {
+  // A tall pad takes the screen's height left under it; set again only when the width changes (the phone turned),
+  // not when Safari's bars come and go, so the strokes keep their shape.
+  if (shape === "tall") {
+    const w = pad.getBoundingClientRect().width;
+    if (w !== fitW) {
+      fitW = w;
+      pad.style.aspectRatio = "auto";
+      pad.style.height = Math.max(260, Math.min(innerHeight - pad.getBoundingClientRect().top - 150, w * 2.2)) + "px";
+    }
+  } else { pad.style.aspectRatio = ""; pad.style.height = ""; }
   const r = pad.getBoundingClientRect(), d = devicePixelRatio || 1;
+  aspect = r.width / r.height;
   pad.width = r.width * d; pad.height = r.height * d; redraw();
 }
 function drawStroke(s) {
@@ -117,11 +143,12 @@ pad.addEventListener("pointerup", up); pad.addEventListener("pointercancel", up)
 function flush() {
   if (!live || !pending.length) return;
   const pts = pending.splice(0, 200);
-  send({kind: "stroke", id: live.id, color: live.color, width: live.width, points: pts});
+  send({kind: "stroke", id: live.id, color: live.color, width: live.width, points: pts, aspect: +aspect.toFixed(4), hold});
   if (pending.length === 0 && live) pending.push(pts[pts.length - 1]);
 }
 setInterval(() => { if (pending.length > 1) flush(); }, 60);
-$("#clear").onclick = () => { strokes = []; redraw(); send({kind: "clear"}); };
+function clearAll() { strokes = []; redraw(); send({kind: "clear"}); }
+$("#clear").onclick = clearAll;
 addEventListener("resize", fit); fit();
 
 // Photo: scaled to at most 1920 px on the long side, as JPEG, before it leaves the phone.

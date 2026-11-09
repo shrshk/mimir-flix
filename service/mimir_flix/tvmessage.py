@@ -40,6 +40,9 @@ class Stroke(BaseModel):
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     width: float = Field(gt=0, le=0.05)  # of the box's width
     points: list[Annotated[list[float], Field(min_length=3, max_length=3)]] = Field(min_length=1, max_length=200)
+    # Set on the phone's send page; left out by an older page, then the TV uses 16:9 and a few seconds.
+    aspect: float | None = Field(None, ge=0.2, le=5)  # the drawing box's width / height; the TV fits it, centred
+    hold: int | None = Field(None, ge=0, le=3600)  # seconds the TV keeps it after the last stroke; 0: until cleared
 
 
 class Clear(BaseModel):
@@ -136,7 +139,7 @@ def router(overlay: Overlay) -> APIRouter:
     @api.post("/send", status_code=202)
     def send(body: Send, request: Request):
         from_phone(request)
-        overlay.publish(body.message.model_dump())
+        overlay.publish(body.message.model_dump(exclude_none=True))
 
     @api.post("/photo", status_code=202)
     async def photo(request: Request):

@@ -100,3 +100,27 @@ def test_the_stream_sends_events_and_lets_go_of_the_listener():
     assert json.loads(next(stream).removeprefix("data: ")) == {"kind": "clear"}
     stream.close()
     assert overlay.listeners == []
+
+
+def test_a_stroke_carries_the_pads_shape_and_how_long_the_tv_keeps_it():
+    overlay = Overlay(clock=Clock())
+    phone, _ = clients(overlay)
+    tv = overlay.listen()
+    # a tall pad (the phone held upright), kept on the TV until cleared (hold 0)
+    stroke = {
+        "kind": "stroke",
+        "id": 1,
+        "color": "#ffffff",
+        "width": 0.006,
+        "points": [[0.5, 0.5, 0.5]],
+        "aspect": 0.6,
+        "hold": 0,
+    }
+    assert phone.post("/api/tv/send", json={"message": stroke}).status_code == 202
+    assert tv.get_nowait() == stroke
+    # an older phone page sends neither: the TV's defaults apply, nothing is added
+    old = {k: v for k, v in stroke.items() if k not in ("aspect", "hold")}
+    assert phone.post("/api/tv/send", json={"message": old}).status_code == 202
+    assert tv.get_nowait() == old
+    for bad in ({"aspect": 9}, {"aspect": 0}, {"hold": -1}, {"hold": 7200}):
+        assert phone.post("/api/tv/send", json={"message": stroke | bad}).status_code == 422
