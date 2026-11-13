@@ -353,3 +353,25 @@ def test_on_my_apps_takes_each_apps_whole_catalogue_page_by_page_up_to_a_cap(tmp
     netflix = pick("netflix")[0]
     assert [t["title"] for t in s.on_app(netflix, 1, [8])] == ["M1"]
     assert not any(u.params.get("page") == "2" for u in calls)
+
+
+def test_the_phones_search_runs_on_the_tv_in_wholphin(tmp_path, monkeypatch):
+    searched = []
+    app = FastAPI()
+    app.include_router(
+        router(Streaming("eyJtok", tmp_path / "m.db"), None, tv_search=lambda q: searched.append(q) or q != "absent")
+    )
+    c = TestClient(app)
+    assert c.post("/api/streaming/tv-search", json={"q": "  RRR "}).status_code == 204
+    assert searched == ["RRR"]
+    assert c.post("/api/streaming/tv-search", json={"q": "absent"}).status_code == 409  # Wholphin not on the TV
+    assert c.post("/api/streaming/tv-search", json={"q": ""}).status_code == 422
+    no_tv = FastAPI()
+    no_tv.include_router(router(Streaming("eyJtok", tmp_path / "m.db"), None))
+    assert TestClient(no_tv).post("/api/streaming/tv-search", json={"q": "RRR"}).status_code == 409
+
+    sent = []
+    monkeypatch.setattr(Tv, "shell", lambda self, command: sent.append(command) or "searched")
+    assert Tv("tv", tmp_path / "adbkey").search_in_wholphin("RRR'; reboot; echo '")
+    start = sent[0].split("then input keyevent KEYCODE_WAKEUP; ")[1].split(" >/dev/null")[0]
+    assert shlex.split(start)[-1] == "RRR'; reboot; echo '"  # one quoted word, never a command

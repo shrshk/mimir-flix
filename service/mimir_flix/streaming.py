@@ -22,7 +22,7 @@ from urllib.parse import quote, urlsplit
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mimir_flix.tv import TvError
 
@@ -376,6 +376,10 @@ def tv_quiet(open_app, *args) -> None:
         print("tv:", e)
 
 
+class TvSearch(BaseModel):
+    q: str = Field(min_length=1, max_length=200)
+
+
 class Open(BaseModel):
     app: str
     title: str = ""
@@ -389,6 +393,7 @@ def router(
     streaming: Streaming,
     open_app: Callable[[str, str, str], None] | None,
     from_tv: Callable[[Request], bool] = lambda request: False,
+    tv_search: Callable[[str], bool] | None = None,
 ) -> APIRouter:
     api = APIRouter(prefix="/api/streaming")
 
@@ -436,6 +441,18 @@ def router(
             open_app(app.packages, body.title[:200], streaming.title_link(app, body.tmdb, body.title[:200]))
         except TvError as e:
             raise HTTPException(502, str(e)) from e
+
+    @api.post("/tv-search", status_code=204)
+    def search_on_tv(body: TvSearch):
+        """The phone's search, run in the TV's Jellyfin app (Wholphin), with the results on the TV."""
+        if tv_search is None:
+            raise HTTPException(409, "No TV set up (add one on the Settings page)")
+        try:
+            found = tv_search(body.q.strip()[:200])
+        except TvError as e:
+            raise HTTPException(502, str(e)) from e
+        if not found:
+            raise HTTPException(409, "Wholphin is not on the TV")
 
     @api.get("/launch")
     def launch(request: Request, app: str, tmdb: str = "", title: str = ""):

@@ -82,6 +82,16 @@ class Tv:
         )
         return "played" in out
 
+    def search_in_wholphin(self, query: str) -> bool:
+        """Opens Wholphin's search on the TV with this text (its search intent), waking the TV. False when Wholphin
+        is not installed. The text is shell-quoted."""
+        start = f"am start -a android.intent.action.SEARCH -n {WHOLPHIN}/.MainActivity --es query {shlex.quote(query)}"
+        out = self.shell(
+            f"if pm path {WHOLPHIN} >/dev/null 2>&1; then input keyevent KEYCODE_WAKEUP; {start} >/dev/null 2>&1;"
+            " echo searched; else echo none; fi"
+        )
+        return "searched" in out
+
     def open_overlay(self) -> None:
         """Starts the TV app's message overlay (I4), which stops by itself after a quiet spell. No wake key: a TV
         that is off stays off."""
