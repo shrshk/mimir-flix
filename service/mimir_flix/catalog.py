@@ -132,6 +132,12 @@ class Catalog:
     def jobs(self) -> list[Job]:
         return []
 
+    def everything(self) -> list[dict]:
+        """Every movie and show it lists, for the whole catalogue in Jellyfin (mirror.py): [{"kind": "movie" or
+        "show", "url", "title", "page"}]; a show's url is the page its seasons or episodes are on. Read from a
+        local index, not the provider, since it is asked every hour. [] leaves the provider out of the mirror."""
+        return []
+
     def info(self, base: str) -> list[dict]:
         """Extra lines for its card on the Settings page, each with a copy button: [{"label", "value"}] (e.g. the
         address and login of what serve() offers other players). base: mimir-flix's address on the home network."""

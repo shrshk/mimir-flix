@@ -489,6 +489,14 @@ def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, re
 
     jobs.register(app_jobs.NEW_EPISODES, new_episodes)
 
+    def whole_catalogue():
+        try:
+            app_jobs.whole_catalogue(jobs, catalogs, jf, media_root, resolver)
+        except (JellyfinError, CatalogError, OSError) as e:  # recorded as failed; tried again next round
+            print("whole catalogue failed:", e)
+
+    jobs.register(app_jobs.WHOLE_CATALOGUE, whole_catalogue)
+
     def hourly():
         first = True
         while True:
@@ -497,6 +505,8 @@ def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, re
                     app_jobs.run_job(jobs, name, job)
             if not first and not jobs.paused(app_jobs.NEW_EPISODES):
                 new_episodes()
+            if not first and not jobs.paused(app_jobs.WHOLE_CATALOGUE):
+                whole_catalogue()
             first = False
             time.sleep(3600)
 

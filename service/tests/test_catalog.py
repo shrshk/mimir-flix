@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
 from jobkit import Jobs
 
-from mimir_flix import checks, settings
+from mimir_flix import checks, mirror, settings
 from mimir_flix import jobs as app_jobs
 from mimir_flix.app import create_app
 from mimir_flix.catalog import Catalog, CatalogError, Catalogs, Job, node_id
@@ -154,6 +154,12 @@ class FakeCatalog(Catalog):
     def index(self):
         self.index_runs += 1
         return "index rebuilt"
+
+    def everything(self):
+        shows = [i for i in self.pages[SECTIONS["Shows"]] if i["kind"] == "folder"]
+        return [{"kind": "movie", "url": MOVIE, "title": "Heat (1995)", "page": SECTIONS["Movies"]}] + [
+            {"kind": "show", "url": s["url"], "title": s["title"], "page": SECTIONS["Shows"]} for s in shows
+        ]
 
 
 class Plugin:
@@ -654,3 +660,47 @@ def test_the_relay_checks_the_address_it_actually_connected_to(monkeypatch):
         assert looks == ["127.0.0.1", "127.0.0.1"]  # the name before connecting, the address after
     finally:
         server.shutdown()
+
+
+def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home, cat, tmp_path):
+    media, air = tmp_path / "media", "http://air:8724"
+    shows_root, movies_root = media / "tv1", media / "tv1-movies"
+    jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
+    app_jobs.define(jobs)
+    fake = FakeJellyfin()
+    jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
+
+    # Off unless the provider's settings turn it on: nothing written, nothing asked of the provider.
+    assert app_jobs.whole_catalogue(jobs, home, jf, media, air) == "no provider has the whole catalogue turned on"
+    assert not media.exists() and cat.fetched == []
+    settings.save({"providers": [{"id": "tv1", "name": "My TV", "kind": "fakecat", "mirror": True}]}, home.config)
+    cat = home.get("tv1")[1]  # a changed settings entry makes the provider again
+
+    # A show added by hand keeps its own hourly check and is not written again; another show also called "Dark"
+    # gets a folder of its own.
+    cat.pages[SECTIONS["Shows"]].append(folder("DARK", f"{SITE}/remake"))
+    cat.pages[f"{SITE}/remake"] = [video("Episode 1", "https://files.example/remake/e1.mp4")]
+    cat.pages[SECTIONS["Shows"]].append(folder("Mine", f"{SITE}/mine"))
+    cat.pages[f"{SITE}/mine"] = [video("Episode 1", "https://files.example/mine/e1.mp4")]
+    follow(shows_root, "Mine", f"{SITE}/mine")
+
+    # A batch of two: the movie, Dark, and Other (its page is down: tried again later); the remake waits.
+    t = time.time()
+    done = mirror.mirror(cat, "tv1", shows_root, movies_root, air, per_run=2, now=t)
+    assert done == {"movies": 1, "shows": 1, "episodes": 3, "failed": 1}
+    assert (movies_root / "Heat (1995)/Heat (1995).strm").exists()
+    assert (shows_root / "Dark/Season 02/Dark S02E01 - Truth.strm").exists()
+    assert f"{SITE}/mine" not in cat.fetched
+    # The job takes the rest (never written first), makes the libraries Jellyfin did not have, and says what is left.
+    summary = app_jobs.whole_catalogue(jobs, home, jf, media, air)
+    assert summary == "My TV: 0 movies, 1 shows (1 episodes), 1 failed, 1 shows waiting"
+    assert (shows_root / "DARK (2)/Season 01/DARK (2) S01E01.strm").exists()
+    assert fake.libs["My TV"]["Locations"] == [str(shows_root)] and fake.libs["My TV"]["CollectionType"] == "tvshows"
+
+    # A written show is read again after a week, so its new episodes arrive; before that it is left alone.
+    cat.pages[S2] = [video("Episode 2. New", EP.format(s=2, e=2)), *cat.pages[S2]]
+    week = mirror.REWRITE_AFTER
+    assert mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t + week - 1)["shows"] == 0
+    assert not (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()
+    assert mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t + week + 1)["shows"] >= 1
+    assert (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()

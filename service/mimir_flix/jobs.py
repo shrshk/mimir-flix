@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from jobkit import Jobs, page_html
 
+from mimir_flix import mirror
 from mimir_flix.catalog import CatalogError, Catalogs, Job
 from mimir_flix.catalog_routes import libraries, roots
 from mimir_flix.jellyfin import Jellyfin
@@ -19,10 +20,14 @@ from mimir_flix.watchlist import Watchlist
 from mimir_flix.wizard import allowed
 
 NEW_EPISODES = "new-episodes"
+WHOLE_CATALOGUE = "whole-catalogue"
 
 
 def define(jobs: Jobs) -> None:
     jobs.define(NEW_EPISODES, "New episodes: added shows into Jellyfin, My list shows marked", "hourly")
+    jobs.define(
+        WHOLE_CATALOGUE, "Whole catalogue: every movie and show into Jellyfin, a batch of shows a run", "hourly"
+    )
 
 
 def new_episodes(
@@ -42,6 +47,35 @@ def new_episodes(
             found += new
         run.summary = f"{found} new episode{'s' if found != 1 else ''}" + (f", {listed} on My list" if listed else "")
         return found
+
+
+def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Path, resolver: str) -> str:
+    """Every provider that turned it on ("mirror": true in its settings entry): its whole catalogue into its
+    Jellyfin libraries, a batch of shows a run (mirror.py), then a scan of the libraries that changed (made when
+    missing)."""
+    with jobs.run(WHOLE_CATALOGUE) as run:
+        notes = []
+        for entry, cat in catalogs.all():
+            if not entry.get("mirror"):
+                continue
+            where, names = roots(media_root, entry["id"]), libraries(entry)
+            done = mirror.mirror(cat, entry["id"], where["shows"], where["movies"], resolver)
+            have = {x["Name"]: x for x in jf.libraries()}
+            for kind, jf_kind, wrote in (("shows", "tvshows", done["shows"]), ("movies", "movies", done["movies"])):
+                if not wrote:
+                    continue
+                if names[kind] in have:
+                    jf.scan(have[names[kind]].get("ItemId"))
+                else:
+                    jf.create_library(names[kind], jf_kind, [str(where[kind])])
+            waiting = mirror.left(cat, where["shows"])
+            notes.append(
+                f"{entry['name']}: {done['movies']} movies, {done['shows']} shows ({done['episodes']} episodes)"
+                + (f", {done['failed']} failed" if done["failed"] else "")
+                + (f", {waiting} shows waiting" if waiting else "")
+            )
+        run.summary = "; ".join(notes) or "no provider has the whole catalogue turned on"
+        return run.summary
 
 
 def job_name(pid: str, job: Job) -> str:
