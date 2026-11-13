@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
+from mimir_flix import badges
 from mimir_flix.mirror import folder_name, write_details
 from mimir_flix.streaming import Streaming
 
@@ -61,7 +62,8 @@ def fill(
                 strm.write_text(line)
             kinds = [a["name"] for a in it["apps"]] + ["Show" if it["kind"] == "show" else "Movie"]
             details = {"title": label, "plot": it.get("desc", ""), "thumb": it.get("thumb", ""), "genres": kinds}
-            out["posters"] += write_details(folder, "movie", details, None, client, budget)[1]
+            labels = badges.for_apps([a["name"] for a in it["apps"]])
+            out["posters"] += write_details(folder, "movie", details, None, client, budget, labels=labels)[1]
             taken[name.lower()], by_tmdb[it["tmdb"]] = it["tmdb"], name
             kept[name] = {"tmdb": it["tmdb"], "seen": now}
             out["titles"] += 1
@@ -72,7 +74,8 @@ def fill(
     for name, s in list(kept.items()):
         if now - s["seen"] > KEEP_FOR:
             folder = root / name
-            for f in (folder / f"{name}.strm", folder / "movie.nfo", folder / "poster.jpg"):
+            files = (f"{name}.strm", "movie.nfo", "poster.jpg", badges.ORIGINAL, badges.DRAWN)
+            for f in (folder / n for n in files):
                 f.unlink(missing_ok=True)
             if folder.is_dir() and not any(folder.iterdir()):
                 folder.rmdir()

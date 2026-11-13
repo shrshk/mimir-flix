@@ -12,6 +12,7 @@ dependencies = [
     "cryptography>=46",
     "jobkit",
     "qrcode>=8",
+    "pillow>=13.0.0",
 ]
 
 [dependency-groups]

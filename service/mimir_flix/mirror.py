@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 import httpx
 
+from mimir_flix import badges
 from mimir_flix.catalog import Catalog, CatalogError
 from mimir_flix.strm import follow, followed, safe, write_movie, write_show
 
@@ -130,7 +131,8 @@ def mirror(
             else:
                 continue
             several = (x["kind"], base_title(x["title"])[0].lower()) in dubbed
-            changed, fetched = write_details(folder, tag, x, cat, client, budget, several)
+            labels = badges.for_language(x.get("language"))
+            changed, fetched = write_details(folder, tag, x, cat, client, budget, several, labels)
             out["details"] += changed
             out["posters"] += fetched
     finally:
@@ -180,11 +182,18 @@ def nfo(tag: str, item: dict, with_language: bool = False) -> str:
 
 
 def write_details(
-    folder: Path, tag: str, item: dict, cat: Catalog, http: httpx.Client, budget: list[int], with_language: bool = False
+    folder: Path,
+    tag: str,
+    item: dict,
+    cat: Catalog,
+    http: httpx.Client,
+    budget: list[int],
+    with_language: bool = False,
+    labels: list[tuple[str, str]] | None = None,
 ) -> tuple[bool, bool]:
     """The title's .nfo (rewritten only when it changes, as Jellyfin reads a changed file again) and, while the
-    run's poster budget lasts, its poster from the catalogue (http or https, an image, at most POSTER_MAX bytes).
-    Returns (nfo changed, poster fetched)."""
+    run's poster budget lasts, its poster from the catalogue (http or https, an image, at most POSTER_MAX bytes),
+    with labels drawn on it (badges.py). Returns (nfo changed or poster drawn again, poster fetched)."""
     if not folder.is_dir():
         return False, False
     f, text = folder / f"{tag}.nfo", nfo(tag, item, with_language)
@@ -192,7 +201,8 @@ def write_details(
     if changed:
         f.write_text(text)
     poster, url, fetched = folder / "poster.jpg", item.get("thumb") or "", False
-    if url.startswith(("http://", "https://")) and not poster.exists() and budget[0] > 0:
+    have = poster.exists() or (folder / badges.ORIGINAL).exists()
+    if url.startswith(("http://", "https://")) and not have and budget[0] > 0:
         budget[0] -= 1
         try:
             r = http.get(url)
@@ -205,6 +215,8 @@ def write_details(
                 fetched = True
         except httpx.HTTPError:
             pass  # no poster this time; tried again next run
+    if labels is not None and badges.apply(folder, labels):
+        changed = True
     return changed, fetched
 
 
