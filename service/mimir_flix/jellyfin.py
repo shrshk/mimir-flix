@@ -359,11 +359,18 @@ class Jellyfin:
             time.sleep(wait)
         raise JellyfinError("Swiftfin did not open")
 
-    def play_on_tv(self, item_id: str, open_app=None, wait: float = 1, tries: int = 30, settle: float = 3) -> None:
-        """Starts it in the Jellyfin TV app. open_app (if given) brings the app to the front unless it already is
+    def play_on_tv(
+        self, item_id: str, open_app=None, wait: float = 1, tries: int = 30, settle: float = 3, play_app=None
+    ) -> None:
+        """Starts it in the Jellyfin TV app. play_app (if given) plays it in Wholphin by intent and returns True, or
+        False when Wholphin is not there. Otherwise open_app (if given) brings the app to the front unless it already is
         (it returns False then): an app left in the background still has a session but cannot come forward for a
         play command. After opening, this waits for the app to connect, then `settle` seconds more: the app connects
         before its home screen has loaded, and a play command then shows "no playable items" first."""
+        if play_app:  # Wholphin: started by its own intent, from where it was left
+            ticks = (self.user_data(item_id) or {}).get("PlaybackPositionTicks") or 0
+            if play_app(item_id, ticks // 10_000):
+                return
         tv = self.tv_session()
         if open_app and open_app() is not False:  # it was closed or behind another app: opened now
             for _ in range(tries):

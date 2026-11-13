@@ -68,6 +68,20 @@ class Tv:
         )
         return "front" not in out
 
+    def play_in_wholphin(self, item_id: str, position_ms: int = 0) -> bool:
+        """Plays a Jellyfin item in Wholphin through its playback intent (Wholphin ignores Jellyfin's remote play
+        command), waking the TV. False when Wholphin is not installed: Jellyfin's own app is used then."""
+        if not re.fullmatch(r"[0-9a-fA-F-]{32,36}", item_id):  # it goes into a shell command
+            raise TvError("not a Jellyfin item id")
+        start = f"am start -a {WHOLPHIN}.PLAYBACK -n {WHOLPHIN}/.MainActivity --es itemId {item_id}"
+        if position_ms > 0:
+            start += f" --el position {int(position_ms)}"
+        out = self.shell(
+            f"if pm path {WHOLPHIN} >/dev/null 2>&1; then input keyevent KEYCODE_WAKEUP; {start} >/dev/null 2>&1;"
+            " echo played; else echo none; fi"
+        )
+        return "played" in out
+
     def open_overlay(self) -> None:
         """Starts the TV app's message overlay (I4), which stops by itself after a quiet spell. No wake key: a TV
         that is off stays off."""

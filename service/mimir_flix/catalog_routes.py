@@ -76,6 +76,7 @@ def router(
     open_app=None,
     hls: HlsRelay | None = None,
     watchlist: Watchlist | None = None,
+    play_app=None,
 ) -> APIRouter:
     hls = hls or HlsRelay()
     watchlist = watchlist or Watchlist(thumbs.parent / "mimir-flix.db")
@@ -305,7 +306,7 @@ def router(
         item_id = jellyfin(jf.find, library, str(path))
         known.pop(pid, None)  # Jellyfin has something new
         if tv:
-            jellyfin(jf.play_on_tv, item_id, open_app)
+            jellyfin(lambda: jf.play_on_tv(item_id, open_app, play_app=play_app))
         return item_id
 
     @api.post("/api/p/{pid}/jellyfin")

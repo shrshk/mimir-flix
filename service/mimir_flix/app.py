@@ -392,11 +392,14 @@ def main() -> None:
     # 📺 TV opens the Jellyfin TV app when it is closed (the TV trusts this machine's ADB key: Pair on the Settings page).
     tv = Tv(settings.default_tv(cfg), config / "adbkey") if settings.default_tv(cfg) else None
     open_app = (lambda: tv_answer(tv.open_jellyfin)) if tv else None
+    play_app = (lambda item_id, ms: tv_answer(lambda: tv.play_in_wholphin(item_id, ms))) if tv else None
     # Provider plugins (catalog.py): the ones in Settings whose plugin is installed.
     catalogs = Catalogs(config, vault, data)
     # My list, for every house: streaming titles, library titles and providers' shows and videos.
     watchlist = Watchlist(data / "mimir-flix.db")
-    routers = [jf_router(jf, kodi, resolver, open_app, watchlist, hidden=lambda: hidden_libraries(catalogs))]
+    routers = [jf_router(
+            jf, kodi, resolver, open_app, watchlist, hidden=lambda: hidden_libraries(catalogs), play_app=play_app
+        )]
     # Where titles stream, filtered to the house's apps: TMDB, with its API Read Access Token (from your password manager) in
     # this file. Without it, search shows only Jellyfin (and the providers).
     token_file = config / "tmdb-token"
@@ -441,7 +444,9 @@ def main() -> None:
     # A provider plugin's pages, the resolver its .strm files point at, and the hourly jobs.
     start_resolver(catalogs, port, jf=jf)
     routers.append(
-        catalog_router(catalogs, jf, kodi, media_root, resolver, data / "thumbs", open_app, watchlist=watchlist)
+        catalog_router(
+            catalogs, jf, kodi, media_root, resolver, data / "thumbs", open_app, watchlist=watchlist, play_app=play_app
+        )
     )
     start_provider_jobs(jobs, catalogs, jf, media_root, resolver, watchlist)
     connectors = {"providers": lambda: listing(catalogs), "kodi": kodi is not None, "tv": tv is not None}

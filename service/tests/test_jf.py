@@ -319,6 +319,29 @@ def test_tv_brings_the_app_forward_when_it_was_left_in_the_background(tmp_path, 
     assert calls == [1, 1] and all(s < 2 for s in slept) and len(PLAYED) == 2  # in front already: no settling
 
 
+def test_tv_plays_in_wholphin_by_its_intent_from_where_it_was_left(tmp_path, monkeypatch):
+    # Wholphin ignores Jellyfin's remote play command; it plays through its own intent, at the saved position.
+    monkeypatch.setattr("tests.test_jf.SESSIONS", [dict(TV_APP)])
+    monkeypatch.setattr("tests.test_jf.PLAYED", [])
+    monkeypatch.setitem(USER_DATA, MOVIE, {"PlaybackPositionTicks": 270_000 * 10_000})
+    started, installed = [], [True]
+
+    def play_app(item_id, ms):
+        started.append((item_id, ms))
+        return installed[0]
+
+    jf = Jellyfin("http://jf", "secret-key", transport=httpx.MockTransport(fake))
+    c = TestClient(
+        create_app(jf, tmp_path / "picks", router(jf, None, "https://lan.example", lambda: False, play_app=play_app))
+    )
+    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", lambda s: None)
+    assert c.post("/api/jf/tv", json={"id": MOVIE}).json() == {"playing": "Wedding Film 4K"}
+    assert started == [(MOVIE, 270_000)] and PLAYED == []  # 4 min 30 s in, and no remote command
+    installed[0] = False  # no Wholphin: Jellyfin's own app gets the remote command
+    assert c.post("/api/jf/tv", json={"id": MOVIE}).status_code == 200
+    assert [p[0] for p in PLAYED] == ["tv"]
+
+
 def test_tv_asks_for_the_jellyfin_app_when_it_is_closed(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.test_jf.SESSIONS", [PHONE_APP])  # never the phone
     monkeypatch.setattr("tests.test_jf.PLAYED", [])

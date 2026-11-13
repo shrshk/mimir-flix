@@ -104,6 +104,7 @@ def router(
     open_app=None,
     watchlist: Watchlist | None = None,
     hidden: Callable[[], set[str]] = set,
+    play_app=None,
 ) -> APIRouter:
     """hidden: the providers' own libraries, shown in each provider's section instead of Your library."""
     api = APIRouter()
@@ -286,7 +287,7 @@ def router(
         item = guard(jf.item, p.id)
         if item.get("Type") not in PLAYABLE:
             raise HTTPException(400, "not a video")
-        guard(jf.play_on_tv, p.id, open_app)
+        guard(lambda: jf.play_on_tv(p.id, open_app, play_app=play_app))
         return {"playing": item.get("Name")}
 
     @api.post("/api/jf/phone")
