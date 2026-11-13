@@ -34,7 +34,7 @@ MIRRORED = ".mirrored.json"
 SHOWS_PER_RUN = 100  # page reads stay polite: the first pass over ~2,000 shows takes about a day
 EPISODES_KEPT = 30  # a mirrored show's latest episodes; favourite it in Jellyfin for all of them
 REWRITE_AFTER = 7 * 24 * 3600
-POSTERS_PER_RUN = 400  # poster downloads a run (the first pass over ~4,000 titles takes a few hours)
+POSTERS_PER_RUN = 1200  # poster downloads a run, about 20 a minute (the first pass over ~30,000 titles takes a day)
 POSTER_MAX = 3_000_000
 YEAR = re.compile(
     r"^(.*?)\s*\((\d{4})\)\s*$"
