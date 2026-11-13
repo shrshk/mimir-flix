@@ -419,9 +419,7 @@ def main() -> None:
             caller = (request.headers.get("x-forwarded-for") or caller).split(",")[-1].strip()
         return bool(tv_host) and caller == tv_host.split(":")[0]
 
-    routers.append(
-        streaming_router(streaming, tv.open_app if tv else None, from_tv, tv.search_in_wholphin if tv else None)
-    )
+    routers.append(streaming_router(streaming, tv.open_app if tv else None, from_tv))
 
     def watched() -> set[str]:
         try:

@@ -946,8 +946,6 @@ $("#q").addEventListener("input", () => {
       add("On your apps", elsewhere.map(w => tile(w, w.year)));
       for (const g of groups) add(g.section, g.items.map(i => tile({...i, src: g.src}, [g.section, i.sub].filter(Boolean).join(" · "))));
       if (!sections.has(pick)) pick = "";
-      // The same search on the TV, in its Jellyfin app (Wholphin), for the results on the big screen.
-      if (streaming && streaming.tv) html += `<div class="chips line"><button class="chip" id="tvsearch">📺 Search on the TV</button></div>`;
       if (sections.size > 1) {
         const chip = (name, n) => `<button class="chip${name === pick ? " on" : ""}" data-sec="${esc(name)}">${esc(name || "All")}<small>${n}</small></button>`;
         html += `<div class="chips line">${chip("", [...sections.values()].flat().length)}${[...sections].map(([name, t]) => chip(name, t.length)).join("")}</div>`;
@@ -958,11 +956,6 @@ $("#q").addEventListener("input", () => {
       $("#grid").innerHTML = html || (waiting ? `<div class="skel">${"<i></i>".repeat(8)}</div>` : `<div class="full mute">Nothing matches “${esc(q)}”.</div>`);
       crumbs = []; bindTiles(true);
       $("#grid").querySelectorAll(".chip[data-sec]").forEach(b => b.onclick = () => { pick = b.dataset.sec; draw(); });
-      const ts = $("#tvsearch");
-      if (ts) ts.onclick = async () => {
-        try { await api("/api/streaming/tv-search", {method: "POST", body: {q}}); toast(`Searching “${q}” on the TV`); }
-        catch (e) { toast(e.message); }
-      };
     };
     const arrive = (key, p) => p.catch(() => []).then(v => { got[key] = v; draw(); });
     arrive("mine", api("/api/jf/search?q=" + enc(q)));
