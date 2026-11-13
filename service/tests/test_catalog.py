@@ -158,9 +158,11 @@ class FakeCatalog(Catalog):
     def everything(self):
         shows = [i for i in self.pages[SECTIONS["Shows"]] if i["kind"] == "folder"]
         movies = [{"kind": "movie", "url": MOVIE, "title": "Heat (1995)", "page": SECTIONS["Movies"]}]
-        return movies + getattr(self, "extra_movies", []) + [
-            {"kind": "show", "url": s["url"], "title": s["title"], "page": SECTIONS["Shows"]} for s in shows
-        ]
+        return (
+            movies
+            + getattr(self, "extra_movies", [])
+            + [{"kind": "show", "url": s["url"], "title": s["title"], "page": SECTIONS["Shows"]} for s in shows]
+        )
 
 
 class Plugin:
@@ -600,7 +602,9 @@ def test_the_relay_never_reaches_this_mac_whatever_a_stream_server_says(tmp_path
         return httpx.Response(200, text="#EXTM3U\n")
 
     relay = HlsRelay(transport=httpx.MockTransport(server))
-    out = relay.rewrite("#EXTM3U\nhttp://127.0.0.1:8723/api/settings\nhttp://[::1]:8096/Auth/Keys\n", "http://1.2.3.4/a.m3u8", "/h?u=")
+    out = relay.rewrite(
+        "#EXTM3U\nhttp://127.0.0.1:8723/api/settings\nhttp://[::1]:8096/Auth/Keys\n", "http://1.2.3.4/a.m3u8", "/h?u="
+    )
     for line in out.splitlines()[1:]:
         with pytest.raises(HlsError, match="this Mac"):
             relay.open(unquote(line.split("u=", 1)[1].split("&x=")[0]))
@@ -689,7 +693,10 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     t = time.time()
     done = mirror.mirror(cat, "tv1", shows_root, movies_root, air, per_run=2, now=t)
     assert {k: done[k] for k in ("movies", "shows", "episodes", "failed")} == {
-        "movies": 1, "shows": 1, "episodes": 3, "failed": 1
+        "movies": 1,
+        "shows": 1,
+        "episodes": 3,
+        "failed": 1,
     }
     assert (movies_root / "Heat (1995)/Heat (1995).strm").exists()
     assert (shows_root / "Dark/Season 02/Dark S02E01 - Truth.strm").exists()
@@ -702,7 +709,9 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
 
     # A mirrored show keeps its latest episodes only; favourited in Jellyfin, it is followed and gets them all.
     assert sorted(f.name for f in (shows_root / "Dark").rglob("*.strm")) == [
-        "Dark S01E01.strm", "Dark S01E02 - Lies.strm", "Dark S02E01 - Truth.strm"
+        "Dark S01E01.strm",
+        "Dark S01E02 - Lies.strm",
+        "Dark S02E01 - Truth.strm",
     ]
     remake2 = f"{SITE}/remake2"
     cat.pages[SECTIONS["Shows"]].append(folder("Long", remake2))
@@ -724,7 +733,10 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t)
     files = {f.parent.name: f.read_text() for f in movies_root.rglob("*.strm")}
     assert sorted(files) == ["Heat (1995)", "Heat (1995) (2)"]
-    assert {u for u in (MOVIE, other_heat) for text in files.values() if quote(u, safe="") in text} == {MOVIE, other_heat}
+    assert {u for u in (MOVIE, other_heat) for text in files.values() if quote(u, safe="") in text} == {
+        MOVIE,
+        other_heat,
+    }
 
     # A written show is read again after a week, so its new episodes arrive; before that it is left alone.
     cat.pages[S2] = [video("Episode 2. New", EP.format(s=2, e=2)), *cat.pages[S2]]
@@ -746,8 +758,18 @@ def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins
         return httpx.Response(200, content=b"<html>", headers={"content-type": "text/html"})  # not an image
 
     meta = {
-        MOVIE: {"plot": "Cops & robbers <LA>", "language": "English", "genres": ["4K"], "thumb": "http://p.example/heat.jpg"},
-        SHOW: {"language": "Hindi", "genres": ["TV serial"], "studio": "Channel One", "thumb": "http://p.example/x.html"},
+        MOVIE: {
+            "plot": "Cops & robbers <LA>",
+            "language": "English",
+            "genres": ["4K"],
+            "thumb": "http://p.example/heat.jpg",
+        },
+        SHOW: {
+            "language": "Hindi",
+            "genres": ["TV serial"],
+            "studio": "Channel One",
+            "thumb": "http://p.example/x.html",
+        },
     }
     plain = cat.everything
     cat.everything = lambda: [x | meta.get(x["url"], {}) for x in plain()]
@@ -760,7 +782,9 @@ def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins
     assert "<genre>English</genre>" in movie and "<genre>4K</genre>" in movie and "<tag>English</tag>" in movie
     assert (movies_root / "Heat (1995)/poster.jpg").read_bytes() == b"jpeg"
     show = (shows_root / "Dark/tvshow.nfo").read_text()
-    assert "<genre>Hindi</genre>" in show and "<genre>TV serial</genre>" in show and "<studio>Channel One</studio>" in show
+    assert (
+        "<genre>Hindi</genre>" in show and "<genre>TV serial</genre>" in show and "<studio>Channel One</studio>" in show
+    )
     assert not (shows_root / "Dark/poster.jpg").exists()  # the host sent a page, not an image
 
     # Nothing changed: the files are left alone (Jellyfin reads a changed file again) and the poster is not fetched.
@@ -783,3 +807,20 @@ def test_a_film_in_several_languages_says_which_in_its_name_and_tags_combine_lan
     assert "<tag>Telugu · Indian movies</tag>" in telugu
     heat = mirror.nfo("movie", listed[2], False)
     assert "<title>Heat</title>" in heat and "<tag>English · 4K</tag>" in heat
+
+
+def test_a_new_movie_never_takes_the_folder_of_one_already_written(cat, tmp_path):
+    # The same title listed again (another language, a re-upload), and listed before the one already written: it
+    # gets a folder of its own; the first keeps its folder, so Jellyfin's item (and its watch progress) stays put.
+    shows_root, movies_root, air = tmp_path / "tv1", tmp_path / "tv1-movies", "http://air:8724"
+    mirror.mirror(cat, "tv1", shows_root, movies_root, air, per_run=0)
+    first = (movies_root / "Heat (1995)/Heat (1995).strm").read_text()
+    other = "https://files.example/movies/heat-dub.mkv"
+    plain = cat.everything
+    cat.everything = lambda: [
+        {"kind": "movie", "url": other, "title": "Heat (1995)", "page": SECTIONS["Movies"]},
+        *plain(),
+    ]
+    mirror.mirror(cat, "tv1", shows_root, movies_root, air, per_run=0)
+    assert (movies_root / "Heat (1995)/Heat (1995).strm").read_text() == first
+    assert quote(other, safe="") in (movies_root / "Heat (1995) (2)/Heat (1995) (2).strm").read_text()

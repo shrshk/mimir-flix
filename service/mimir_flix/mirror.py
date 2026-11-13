@@ -6,8 +6,8 @@ shows are written a batch per run, those never written first, then the ones writ
 provider fails to list waits for a later run. Followed shows (added by hand) keep their hourly check in strm.py and
 are not written again here. Names follow strm.py, so a mirrored show and an added one share one folder.
 
-A mirrored show keeps only its latest EPISODES_KEPT episodes (the catalogue's long-running shows would otherwise
-put ~200,000 episodes in Jellyfin); a show favourited in Jellyfin becomes followed (follow_favourites), so it gets
+A mirrored show keeps only its latest EPISODES_KEPT episodes (~12,000 shows, many long-running, would otherwise
+put hundreds of thousands of episodes in Jellyfin); a show favourited in Jellyfin becomes followed (follow_favourites), so it gets
 every episode and the hourly check. Movies with the same title get numbered folders.
 
 Each title also gets Jellyfin's own metadata files from what the catalogue says about it (write_details): a
@@ -32,7 +32,7 @@ from mimir_flix.strm import follow, followed, safe, write_movie, write_show
 
 MIRRORED = ".mirrored.json"
 SHOWS_PER_RUN = 100  # page reads stay polite: the first pass over ~2,000 shows takes about a day
-EPISODES_KEPT = 30  # a mirrored show's latest episodes; favourite it in Jellyfin for all of them
+EPISODES_KEPT = 10  # a mirrored show's latest episodes; favourite it in Jellyfin for all of them
 REWRITE_AFTER = 7 * 24 * 3600
 POSTERS_PER_RUN = 1200  # poster downloads a run, about 20 a minute (the first pass over ~30,000 titles takes a day)
 POSTER_MAX = 3_000_000
@@ -79,10 +79,16 @@ def mirror(
     out = {"movies": 0, "shows": 0, "episodes": 0, "failed": 0, "details": 0, "posters": 0}
 
     movies, taken_movies, changed = mirrored(movies_root), {}, False
-    for m in (x for x in listed if x["kind"] == "movie"):
+    listed_movies = [x for x in listed if x["kind"] == "movie"]
+    # Folders already written keep their movie: reserved before any new movie is named, so a new one listed first
+    # never takes a folder (and Jellyfin's item, with its watch progress) from one listed after it.
+    for m in listed_movies:
         rec = movies.get(m["url"])
-        if rec and taken_movies.get(rec["name"].lower(), m["url"]) == m["url"] and points_at(movies_root, rec, m):
+        if rec and rec["name"].lower() not in taken_movies and points_at(movies_root, rec, m):
             taken_movies[rec["name"].lower()] = m["url"]
+    for m in listed_movies:
+        rec = movies.get(m["url"])
+        if rec and taken_movies.get(rec["name"].lower()) == m["url"]:
             continue
         name = folder_name(m["title"], m["url"], taken_movies)  # new, or its folder was another movie's
         write_movie(pid, m["url"], name, movies_root, resolver, m.get("page", ""))
