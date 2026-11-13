@@ -10,14 +10,21 @@ A mirrored show keeps only its latest EPISODES_KEPT episodes (the catalogue's lo
 put ~200,000 episodes in Jellyfin); a show favourited in Jellyfin becomes followed (follow_favourites), so it gets
 every episode and the hourly check. Movies with the same title get numbered folders.
 
+Each title also gets Jellyfin's own metadata files from what the catalogue says about it (write_details): a
+movie.nfo or tvshow.nfo (plot, its language and kind as genres, a TV channel as studio, year) and poster.jpg, so
+Jellyfin apps can list titles by language or channel even where online metadata finds nothing.
+
 What was written is kept in .mirrored.json in each root ({link: {"name", "at"}}); nothing is removed in this
 version when a title leaves the catalogue."""
 
 import json
 import re
 import time
+from xml.sax.saxutils import escape
 from pathlib import Path
 from urllib.parse import quote
+
+import httpx
 
 from mimir_flix.catalog import Catalog, CatalogError
 from mimir_flix.strm import follow, followed, safe, write_movie, write_show
@@ -25,7 +32,12 @@ from mimir_flix.strm import follow, followed, safe, write_movie, write_show
 MIRRORED = ".mirrored.json"
 SHOWS_PER_RUN = 100  # page reads stay polite: the first pass over ~2,000 shows takes about a day
 EPISODES_KEPT = 30  # a mirrored show's latest episodes; favourite it in Jellyfin for all of them
-REWRITE_AFTER = 7 * 24 * 3600  # a show's episodes are read again weekly (followed shows: hourly, elsewhere)
+REWRITE_AFTER = 7 * 24 * 3600
+POSTERS_PER_RUN = 400  # poster downloads a run (the first pass over ~4,000 titles takes a few hours)
+POSTER_MAX = 3_000_000
+YEAR = re.compile(
+    r"^(.*?)\s*\((\d{4})\)\s*$"
+)  # a show's episodes are read again weekly (followed shows: hourly, elsewhere)
 
 
 def mirrored(root: Path) -> dict[str, dict]:
@@ -57,11 +69,13 @@ def mirror(
     resolver: str,
     per_run: int = SHOWS_PER_RUN,
     now: float | None = None,
+    http: httpx.Client | None = None,
 ) -> dict[str, int]:
-    """One run: every movie not written yet, then up to per_run shows. Returns counts of what was written."""
+    """One run: every movie not written yet, then up to per_run shows, then details for every written title (a
+    batch of posters a run). Returns counts of what was written."""
     now = time.time() if now is None else now
     listed = cat.everything()
-    out = {"movies": 0, "shows": 0, "episodes": 0, "failed": 0}
+    out = {"movies": 0, "shows": 0, "episodes": 0, "failed": 0, "details": 0, "posters": 0}
 
     movies, taken_movies, changed = mirrored(movies_root), {}, False
     for m in (x for x in listed if x["kind"] == "movie"):
@@ -101,7 +115,75 @@ def mirror(
         out["shows"] += 1
         out["episodes"] += len(files) - trim(shows_root / safe(name), EPISODES_KEPT)
         save(shows_root, shows)  # after each show, so a stop part-way loses nothing
+
+    names = {u: r["name"] for u, r in shows.items()} | by_hand
+    budget = [POSTERS_PER_RUN]
+    own = http is None  # a client passed in stays open for its owner
+    client = http or httpx.Client(timeout=20, follow_redirects=True)
+    try:
+        for x in listed:
+            if x["kind"] == "movie" and x["url"] in movies:
+                folder, tag = movies_root / movies[x["url"]]["name"], "movie"
+            elif x["kind"] == "show" and x["url"] in names and (shows_root / names[x["url"]]).is_dir():
+                folder, tag = shows_root / names[x["url"]], "tvshow"
+            else:
+                continue
+            changed, fetched = write_details(folder, tag, x, cat, client, budget)
+            out["details"] += changed
+            out["posters"] += fetched
+    finally:
+        if own:
+            client.close()
     return out
+
+
+def nfo(tag: str, item: dict) -> str:
+    """Jellyfin's metadata file for a movie or a show from what the catalogue says: its language and kind as
+    genres (and tags), a TV channel as studio. Online metadata still fills what this leaves out."""
+    title, year = item["title"], None
+    if m := YEAR.match(title):
+        title, year = m.group(1), m.group(2)
+    lines = [f"  <title>{escape(title)}</title>"]
+    if year:
+        lines.append(f"  <year>{year}</year>")
+    if item.get("plot"):
+        lines.append(f"  <plot>{escape(item['plot'])}</plot>")
+    for g in [item.get("language"), *item.get("genres", [])]:
+        if g:
+            lines += [f"  <genre>{escape(g)}</genre>", f"  <tag>{escape(g)}</tag>"]
+    if item.get("studio"):
+        lines.append(f"  <studio>{escape(item['studio'])}</studio>")
+    body = "\n".join(lines)
+    return f'<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n<{tag}>\n{body}\n</{tag}>\n'
+
+
+def write_details(
+    folder: Path, tag: str, item: dict, cat: Catalog, http: httpx.Client, budget: list[int]
+) -> tuple[bool, bool]:
+    """The title's .nfo (rewritten only when it changes, as Jellyfin reads a changed file again) and, while the
+    run's poster budget lasts, its poster from the catalogue (http or https, an image, at most POSTER_MAX bytes).
+    Returns (nfo changed, poster fetched)."""
+    if not folder.is_dir():
+        return False, False
+    f, text = folder / f"{tag}.nfo", nfo(tag, item)
+    changed = not f.exists() or f.read_text() != text
+    if changed:
+        f.write_text(text)
+    poster, url, fetched = folder / "poster.jpg", item.get("thumb") or "", False
+    if url.startswith(("http://", "https://")) and not poster.exists() and budget[0] > 0:
+        budget[0] -= 1
+        try:
+            r = http.get(url)
+            if (
+                r.status_code == 200
+                and r.headers.get("content-type", "").startswith("image/")
+                and len(r.content) <= POSTER_MAX
+            ):
+                poster.write_bytes(r.content)
+                fetched = True
+        except httpx.HTTPError:
+            pass  # no poster this time; tried again next run
+    return changed, fetched
 
 
 def points_at(root: Path, rec: dict, movie: dict) -> bool:

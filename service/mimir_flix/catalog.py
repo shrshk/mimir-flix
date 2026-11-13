@@ -134,8 +134,10 @@ class Catalog:
 
     def everything(self) -> list[dict]:
         """Every movie and show it lists, for the whole catalogue in Jellyfin (mirror.py): [{"kind": "movie" or
-        "show", "url", "title", "page"}]; a show's url is the page its seasons or episodes are on. Read from a
-        local index, not the provider, since it is asked every hour. [] leaves the provider out of the mirror."""
+        "show", "url", "title", "page"}], optionally with "plot", "thumb" (poster), "language", "genres" (a list,
+        e.g. ["Web series"]) and "studio" (a TV channel), which go into Jellyfin's metadata files. A show's url is
+        the page its seasons or episodes are on. Read from a local index, not the provider, since it is asked every
+        hour. [] leaves the provider out of the mirror."""
         return []
 
     def info(self, base: str) -> list[dict]:

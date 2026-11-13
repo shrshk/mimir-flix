@@ -62,7 +62,11 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
             mirror.follow_favourites(where["shows"], jf.favourite_show_paths())  # all their episodes from now
             done = mirror.mirror(cat, entry["id"], where["shows"], where["movies"], resolver)
             have = {x["Name"]: x for x in jf.libraries()}
-            for kind, jf_kind, wrote in (("shows", "tvshows", done["shows"]), ("movies", "movies", done["movies"])):
+            touched = done["details"] or done["posters"]  # a changed .nfo or a new poster: Jellyfin reads them again
+            for kind, jf_kind, wrote in (
+                ("shows", "tvshows", done["shows"] or touched),
+                ("movies", "movies", done["movies"] or touched),
+            ):
                 if not wrote:
                     continue
                 if names[kind] in have:
@@ -73,6 +77,11 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
             notes.append(
                 f"{entry['name']}: {done['movies']} movies, {done['shows']} shows ({done['episodes']} episodes)"
                 + (f", {done['failed']} failed" if done["failed"] else "")
+                + (
+                    f", {done['details']} details and {done['posters']} posters"
+                    if done["details"] or done["posters"]
+                    else ""
+                )
                 + (f", {waiting} shows waiting" if waiting else "")
             )
         run.summary = "; ".join(notes) or "no provider has the whole catalogue turned on"

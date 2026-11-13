@@ -688,13 +688,15 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     # A batch of two: the movie, Dark, and Other (its page is down: tried again later); the remake waits.
     t = time.time()
     done = mirror.mirror(cat, "tv1", shows_root, movies_root, air, per_run=2, now=t)
-    assert done == {"movies": 1, "shows": 1, "episodes": 3, "failed": 1}
+    assert {k: done[k] for k in ("movies", "shows", "episodes", "failed")} == {
+        "movies": 1, "shows": 1, "episodes": 3, "failed": 1
+    }
     assert (movies_root / "Heat (1995)/Heat (1995).strm").exists()
     assert (shows_root / "Dark/Season 02/Dark S02E01 - Truth.strm").exists()
     assert f"{SITE}/mine" not in cat.fetched
     # The job takes the rest (never written first), makes the libraries Jellyfin did not have, and says what is left.
     summary = app_jobs.whole_catalogue(jobs, home, jf, media, air)
-    assert summary == "My TV: 0 movies, 1 shows (1 episodes), 1 failed, 1 shows waiting"
+    assert summary == "My TV: 0 movies, 1 shows (1 episodes), 1 failed, 1 details and 0 posters, 1 shows waiting"
     assert (shows_root / "DARK (2)/Season 01/DARK (2) S01E01.strm").exists()
     assert fake.libs["My TV"]["Locations"] == [str(shows_root)] and fake.libs["My TV"]["CollectionType"] == "tvshows"
 
@@ -731,3 +733,37 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     assert not (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()
     assert mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t + week + 1)["shows"] >= 1
     assert (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()
+
+
+def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins_files(cat, tmp_path):
+    shows_root, movies_root, air = tmp_path / "tv1", tmp_path / "tv1-movies", "http://air:8724"
+    images = []
+
+    def host(request):
+        images.append(str(request.url))
+        if request.url.path == "/heat.jpg":
+            return httpx.Response(200, content=b"jpeg", headers={"content-type": "image/jpeg"})
+        return httpx.Response(200, content=b"<html>", headers={"content-type": "text/html"})  # not an image
+
+    meta = {
+        MOVIE: {"plot": "Cops & robbers <LA>", "language": "English", "genres": ["4K"], "thumb": "http://p.example/heat.jpg"},
+        SHOW: {"language": "Hindi", "genres": ["TV serial"], "studio": "Star Plus", "thumb": "http://p.example/x.html"},
+    }
+    plain = cat.everything
+    cat.everything = lambda: [x | meta.get(x["url"], {}) for x in plain()]
+    http = httpx.Client(transport=httpx.MockTransport(host))
+    done = mirror.mirror(cat, "tv1", shows_root, movies_root, air, http=http)
+    assert done["posters"] == 1 and done["details"] >= 2
+    movie = (movies_root / "Heat (1995)/movie.nfo").read_text()
+    assert "<title>Heat</title>" in movie and "<year>1995</year>" in movie
+    assert "<plot>Cops &amp; robbers &lt;LA&gt;</plot>" in movie  # escaped, so the file stays valid XML
+    assert "<genre>English</genre>" in movie and "<genre>4K</genre>" in movie and "<tag>English</tag>" in movie
+    assert (movies_root / "Heat (1995)/poster.jpg").read_bytes() == b"jpeg"
+    show = (shows_root / "Dark/tvshow.nfo").read_text()
+    assert "<genre>Hindi</genre>" in show and "<genre>TV serial</genre>" in show and "<studio>Star Plus</studio>" in show
+    assert not (shows_root / "Dark/poster.jpg").exists()  # the host sent a page, not an image
+
+    # Nothing changed: the files are left alone (Jellyfin reads a changed file again) and the poster is not fetched.
+    before = len(images)
+    again = mirror.mirror(cat, "tv1", shows_root, movies_root, air, http=http)
+    assert again["details"] == 0 and again["posters"] == 0 and images[before:] == ["http://p.example/x.html"]
