@@ -18,6 +18,7 @@ from mimir_flix import badges
 from mimir_flix.mirror import folder_name, write_details
 from mimir_flix.streaming import Streaming
 
+TRENDING = "Trending on your apps"  # mimir-flix's home row names, kept for the playlists
 LIBRARY = "On my apps"  # its Jellyfin library (movies), at <media_root>/apps
 STATE = ".onapps.json"
 KEEP_FOR = 14 * 24 * 3600
@@ -85,3 +86,45 @@ def fill(
     tmp.write_text(json.dumps(kept, indent=1, sort_keys=True))
     tmp.replace(root / STATE)
     return out
+
+
+def playlists(streaming: Streaming, jf, root: Path, per_row: int = 20) -> int:
+    """mimir-flix's home rows for the apps, as Jellyfin playlists with the same names, titles and order
+    ("Trending on your apps", "Popular on <app>"), so Jellyfin apps show the same lists (playlists keep their
+    order; Wholphin's rows read them). Returns how many playlists changed."""
+    lib = next((x for x in jf.libraries() if x["Name"] == LIBRARY), None)
+    if not lib:
+        return 0
+    params = {"ParentId": lib["ItemId"], "Recursive": "true", "IncludeItemTypes": "Movie", "Fields": "Path"}
+    found = (jf._call("GET", "/Items", params | {"userId": jf.user()}) or {}).get("Items", [])
+    tmdb_of = {name: s["tmdb"] for name, s in state(root).items()}
+    item_of = {tmdb_of[Path(i["Path"]).parent.name]: i["Id"] for i in found if Path(i["Path"]).parent.name in tmdb_of}
+    have = {
+        p["Name"]: p["Id"]
+        for p in (
+            jf._call("GET", "/Items", {"IncludeItemTypes": "Playlist", "Recursive": "true", "userId": jf.user()}) or {}
+        ).get("Items", [])
+    }
+    changed = 0
+    wanted = [(TRENDING, streaming.trending())] + [
+        (f"Popular on {r['name']}", r["items"]) for r in streaming.rows(per_row=per_row, at_least=1)
+    ]
+    for name, items in wanted:
+        want = [item_of[i["tmdb"]] for i in items if i["tmdb"] in item_of]
+        if not want:
+            continue
+        if name not in have:
+            body = {"Name": name, "Ids": want, "UserId": jf.user(), "MediaType": "Video"}
+            jf._call("POST", "/Playlists", None, body)
+            changed += 1
+            continue
+        pid = have[name]
+        now = (jf._call("GET", f"/Playlists/{pid}/Items", {"userId": jf.user()}) or {}).get("Items", [])
+        if [i["Id"] for i in now] == want:
+            continue
+        if now:
+            entries = ",".join(i["PlaylistItemId"] for i in now)
+            jf._call("DELETE", f"/Playlists/{pid}/Items", {"EntryIds": entries})
+        jf._call("POST", f"/Playlists/{pid}/Items", {"Ids": ",".join(want), "UserId": jf.user()})
+        changed += 1
+    return changed

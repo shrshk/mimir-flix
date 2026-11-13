@@ -10,7 +10,7 @@ them there. Settings ("wholphin_home" in settings.json): {"languages": ["Telugu"
 import json
 
 from mimir_flix.jellyfin import Jellyfin
-from mimir_flix.onapps import LIBRARY
+from mimir_flix.onapps import LIBRARY, TRENDING
 from mimir_flix.streaming import pick
 
 PREFS_ID, CLIENT, KEY, VERSION = "default", "Wholphin", "home_settings", 1
@@ -48,9 +48,16 @@ def rows(
         }
 
     out = [{"type": "ContinueWatchingCombined"}]  # favourites (the watchlist) are in Wholphin's side menu
-    for app in apps if apps_lib else []:
-        if count(ParentId=apps_lib, IncludeItemTypes="Movie", Tags=app):
-            out.append(query(f"On {app}", apps_lib, "Movie", tags=[app]))
+    lists = {
+        p["Name"]: p["Id"]
+        for p in (
+            jf._call("GET", "/Items", {"IncludeItemTypes": "Playlist", "Recursive": "true", "userId": jf.user()}) or {}
+        ).get("Items", [])
+    }
+    # mimir-flix's own rows for the apps, same names and order (onapps.playlists); a playlist row reads its order.
+    for name in [TRENDING] + [f"Popular on {app}" for app in apps] if apps_lib else []:
+        if name in lists:
+            out.append({"type": "ByParent", "parentId": lists[name], "recursive": False})
     for lang in languages:
         shown = False
         for kind, label in KINDS:

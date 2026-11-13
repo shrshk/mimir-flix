@@ -112,7 +112,10 @@ def on_my_apps(jobs: Jobs, streaming, jf: Jellyfin, media_root: Path, base: str)
             jf.create_library(onapps.LIBRARY, "movies", [str(root)])
         elif done["new"] or done["removed"] or done["posters"]:
             jf.scan(lib.get("ItemId"))
-        run.summary = f"{done['titles']} titles ({done['new']} new, {done['removed']} removed)"
+        lists = onapps.playlists(streaming, jf, root)
+        run.summary = (
+            f"{done['titles']} titles ({done['new']} new, {done['removed']} removed), {lists} app lists updated"
+        )
         return run.summary
 
 
