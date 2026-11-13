@@ -6,18 +6,25 @@ shows are written a batch per run, those never written first, then the ones writ
 provider fails to list waits for a later run. Followed shows (added by hand) keep their hourly check in strm.py and
 are not written again here. Names follow strm.py, so a mirrored show and an added one share one folder.
 
+A mirrored show keeps only its latest EPISODES_KEPT episodes (the catalogue's long-running shows would otherwise
+put ~200,000 episodes in Jellyfin); a show favourited in Jellyfin becomes followed (follow_favourites), so it gets
+every episode and the hourly check. Movies with the same title get numbered folders.
+
 What was written is kept in .mirrored.json in each root ({link: {"name", "at"}}); nothing is removed in this
 version when a title leaves the catalogue."""
 
 import json
+import re
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from mimir_flix.catalog import Catalog, CatalogError
-from mimir_flix.strm import followed, safe, write_movie, write_show
+from mimir_flix.strm import follow, followed, safe, write_movie, write_show
 
 MIRRORED = ".mirrored.json"
 SHOWS_PER_RUN = 100  # page reads stay polite: the first pass over ~2,000 shows takes about a day
+EPISODES_KEPT = 30  # a mirrored show's latest episodes; favourite it in Jellyfin for all of them
 REWRITE_AFTER = 7 * 24 * 3600  # a show's episodes are read again weekly (followed shows: hourly, elsewhere)
 
 
@@ -56,12 +63,19 @@ def mirror(
     listed = cat.everything()
     out = {"movies": 0, "shows": 0, "episodes": 0, "failed": 0}
 
-    movies = mirrored(movies_root)
-    for m in (x for x in listed if x["kind"] == "movie" and x["url"] not in movies):
-        write_movie(pid, m["url"], m["title"], movies_root, resolver, m.get("page", ""))
-        movies[m["url"]] = {"name": safe(m["title"]), "at": now}
+    movies, taken_movies, changed = mirrored(movies_root), {}, False
+    for m in (x for x in listed if x["kind"] == "movie"):
+        rec = movies.get(m["url"])
+        if rec and taken_movies.get(rec["name"].lower(), m["url"]) == m["url"] and points_at(movies_root, rec, m):
+            taken_movies[rec["name"].lower()] = m["url"]
+            continue
+        name = folder_name(m["title"], m["url"], taken_movies)  # new, or its folder was another movie's
+        write_movie(pid, m["url"], name, movies_root, resolver, m.get("page", ""))
+        taken_movies[name.lower()] = m["url"]
+        movies[m["url"]] = {"name": name, "at": now}
         out["movies"] += 1
-    if out["movies"]:
+        changed = True
+    if changed:
         save(movies_root, movies)
 
     shows = mirrored(shows_root)
@@ -85,8 +99,44 @@ def mirror(
         taken[name.lower()] = s["url"]
         shows[s["url"]] = {"name": name, "at": now}
         out["shows"] += 1
-        out["episodes"] += len(files)
+        out["episodes"] += len(files) - trim(shows_root / safe(name), EPISODES_KEPT)
         save(shows_root, shows)  # after each show, so a stop part-way loses nothing
+    return out
+
+
+def points_at(root: Path, rec: dict, movie: dict) -> bool:
+    """Whether the movie's recorded file still plays this movie (an older version gave same-titled movies one
+    folder, the last written winning)."""
+    f = root / rec["name"] / f"{rec['name']}.strm"
+    return f.exists() and quote(movie["url"], safe="") in f.read_text()
+
+
+EPISODE = re.compile(r" S(\d+)E(\d+)(?: - .*)?\.strm$")
+
+
+def trim(show_dir: Path, keep: int) -> int:
+    """Leaves a mirrored show's latest keep episodes (by season, then episode); returns how many were removed. These
+    are mirror.py's own .strm files, never anything else."""
+    eps = sorted((tuple(map(int, m.groups())), f) for f in show_dir.rglob("*.strm") if (m := EPISODE.search(f.name)))
+    gone = [f for _, f in eps[:-keep]] if len(eps) > keep else []
+    for f in gone:
+        f.unlink()
+    for d in show_dir.iterdir() if show_dir.exists() else []:
+        if d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
+    return len(gone)
+
+
+def follow_favourites(shows_root: Path, favourite_paths: list[str]) -> list[str]:
+    """Mirrored shows favourited in Jellyfin become followed: every episode, checked hourly (strm.refresh_shows).
+    Returns their names."""
+    by_name = {rec["name"]: url for url, rec in mirrored(shows_root).items()}
+    already = followed(shows_root)
+    out = []
+    for p in map(Path, favourite_paths):
+        if p.parent == shows_root and p.name in by_name and p.name not in already:
+            follow(shows_root, p.name, by_name[p.name])
+            out.append(p.name)
     return out
 
 

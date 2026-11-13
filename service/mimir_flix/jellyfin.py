@@ -304,6 +304,17 @@ class Jellyfin:
         }
         return (self._call("GET", "/Items", params) or {}).get("Items", [])
 
+    def favourite_show_paths(self) -> list[str]:
+        """Where each favourited show's folder is (mirror.py follows the mirrored ones)."""
+        params = {
+            "userId": self.user(),
+            "Recursive": "true",
+            "Filters": "IsFavorite",
+            "IncludeItemTypes": "Series",
+            "Fields": "Path",
+        }
+        return [i["Path"] for i in (self._call("GET", "/Items", params) or {}).get("Items", []) if i.get("Path")]
+
     def set_favourite(self, item_id: str, on: bool) -> None:
         self._call("POST" if on else "DELETE", f"/UserFavoriteItems/{item_id}", {"userId": self.user()})
 

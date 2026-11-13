@@ -59,6 +59,7 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
             if not entry.get("mirror"):
                 continue
             where, names = roots(media_root, entry["id"]), libraries(entry)
+            mirror.follow_favourites(where["shows"], jf.favourite_show_paths())  # all their episodes from now
             done = mirror.mirror(cat, entry["id"], where["shows"], where["movies"], resolver)
             have = {x["Name"]: x for x in jf.libraries()}
             for kind, jf_kind, wrote in (("shows", "tvshows", done["shows"]), ("movies", "movies", done["movies"])):

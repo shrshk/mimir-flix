@@ -64,6 +64,11 @@ class FakeJellyfin:
             if self.running is not None:
                 tasks[0] |= {"State": "Running", "CurrentProgressPercentage": self.running}
             return httpx.Response(200, json=tasks)
+        if path == "/Items" and q.get("Filters") == "IsFavorite" and q.get("Fields") == "Path":  # favourited shows
+            shows = [d for lib in self.libs.values() if lib["CollectionType"] == "tvshows" for r in lib["Locations"]
+                     for d in Path(r).iterdir() if d.is_dir()]
+            hits = [{"Id": f"series:{d.name}", "Path": str(d)} for d in shows if f"series:{d.name}" in self.favourites]
+            return httpx.Response(200, json={"Items": hits})
         if path == "/Items" and q.get("Fields") == "Path":  # what a scan found: .strm files, and each show's folder
             lib = next(x for x in self.libs.values() if x["ItemId"] == q["ParentId"])
             items = []

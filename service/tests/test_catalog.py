@@ -29,7 +29,7 @@ from mimir_flix.mcp_server import router as mcp_router
 from mimir_flix.providers import Providers
 from mimir_flix.providers import router as providers_router
 from mimir_flix.resolver import start_resolver
-from mimir_flix.strm import follow, refresh_shows, show_folder, write_movie, write_show
+from mimir_flix.strm import follow, followed, refresh_shows, show_folder, write_movie, write_show
 from mimir_flix.vault import Vault
 from mimir_flix.watchlist import Watchlist
 from mimir_flix.watchlist import router as list_router
@@ -157,7 +157,8 @@ class FakeCatalog(Catalog):
 
     def everything(self):
         shows = [i for i in self.pages[SECTIONS["Shows"]] if i["kind"] == "folder"]
-        return [{"kind": "movie", "url": MOVIE, "title": "Heat (1995)", "page": SECTIONS["Movies"]}] + [
+        movies = [{"kind": "movie", "url": MOVIE, "title": "Heat (1995)", "page": SECTIONS["Movies"]}]
+        return movies + getattr(self, "extra_movies", []) + [
             {"kind": "show", "url": s["url"], "title": s["title"], "page": SECTIONS["Shows"]} for s in shows
         ]
 
@@ -662,7 +663,7 @@ def test_the_relay_checks_the_address_it_actually_connected_to(monkeypatch):
         server.shutdown()
 
 
-def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home, cat, tmp_path):
+def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home, cat, tmp_path, monkeypatch):
     media, air = tmp_path / "media", "http://air:8724"
     shows_root, movies_root = media / "tv1", media / "tv1-movies"
     jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
@@ -696,6 +697,32 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     assert summary == "My TV: 0 movies, 1 shows (1 episodes), 1 failed, 1 shows waiting"
     assert (shows_root / "DARK (2)/Season 01/DARK (2) S01E01.strm").exists()
     assert fake.libs["My TV"]["Locations"] == [str(shows_root)] and fake.libs["My TV"]["CollectionType"] == "tvshows"
+
+    # A mirrored show keeps its latest episodes only; favourited in Jellyfin, it is followed and gets them all.
+    assert sorted(f.name for f in (shows_root / "Dark").rglob("*.strm")) == [
+        "Dark S01E01.strm", "Dark S01E02 - Lies.strm", "Dark S02E01 - Truth.strm"
+    ]
+    remake2 = f"{SITE}/remake2"
+    cat.pages[SECTIONS["Shows"]].append(folder("Long", remake2))
+    cat.pages[remake2] = [video(f"Episode {n}", f"https://files.example/long/e{n}.mp4") for n in range(5, 0, -1)]
+    monkeypatch.setattr(mirror, "EPISODES_KEPT", 2)
+    mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t)
+    assert sorted(f.name for f in (shows_root / "Long").rglob("*.strm")) == ["Long S01E04.strm", "Long S01E05.strm"]
+    fake.favourites.add("series:Long")
+    app_jobs.whole_catalogue(jobs, home, jf, media, air)
+    assert followed(shows_root)["Long"] == remake2
+    refresh_shows(cat, "tv1", shows_root, air)  # the hourly check brings back the older ones
+    assert len(list((shows_root / "Long").rglob("*.strm"))) == 5
+
+    # Same-titled movies get folders of their own, also when an older run gave them one (the last written won).
+    other_heat = "https://files.example/movies/heat-1986.mkv"
+    cat.extra_movies = [{"kind": "movie", "url": other_heat, "title": "Heat (1995)", "page": SECTIONS["Movies"]}]
+    write_movie("tv1", other_heat, "Heat (1995)", movies_root, air)  # overwrote the first Heat's file
+    mirror.save(movies_root, mirror.mirrored(movies_root) | {other_heat: {"name": "Heat (1995)", "at": t}})
+    mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t)
+    files = {f.parent.name: f.read_text() for f in movies_root.rglob("*.strm")}
+    assert sorted(files) == ["Heat (1995)", "Heat (1995) (2)"]
+    assert {u for u in (MOVIE, other_heat) for text in files.values() if quote(u, safe="") in text} == {MOVIE, other_heat}
 
     # A written show is read again after a week, so its new episodes arrive; before that it is left alone.
     cat.pages[S2] = [video("Episode 2. New", EP.format(s=2, e=2)), *cat.pages[S2]]
