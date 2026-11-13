@@ -1,7 +1,8 @@
-"""On my apps: what is popular on the house's streaming apps (streaming.py, from TMDB) as titles in a Jellyfin
-library, so Jellyfin apps (Wholphin on the TV) list and search them with everything else. Each is a .strm pointing
-at mimir-flix's /api/streaming/launch: played on the TV, it opens the streaming app at the title, while the player shows a short
-black clip. Each title also gets a movie.nfo (plot, year, its apps as genres and tags) and poster.jpg.
+"""On my apps: what is on the house's streaming apps (streaming.py, from TMDB; the most popular few thousand each)
+as titles in a Jellyfin library, so Jellyfin apps (Wholphin on the TV) list and search them with everything else.
+Each is a .strm pointing at mimir-flix's /api/streaming/launch: played on the TV, it opens the streaming app at the
+title, while the player shows a short black clip. Each title also gets a movie.nfo (plot, year, its apps as genres
+and tags) and poster.jpg.
 
 What was written is kept in .onapps.json ({folder: {"tmdb", "seen"}}); a title no longer listed for KEEP_FOR is
 removed (only these generated files)."""
@@ -19,7 +20,8 @@ from mimir_flix.streaming import Streaming
 LIBRARY = "On my apps"  # its Jellyfin library (movies), at <media_root>/apps
 STATE = ".onapps.json"
 KEEP_FOR = 14 * 24 * 3600
-PER_APP = 40  # popular titles per app (movies and shows together)
+PER_APP = 3000  # each app's most popular titles (movies and shows together); TMDB lists fewer for most
+POSTERS_PER_RUN = 3000  # poster downloads a run (from TMDB's image server); the rest come on later runs
 
 
 def state(root: Path) -> dict[str, dict]:
@@ -42,7 +44,7 @@ def fill(
     taken = {name.lower(): s["tmdb"] for name, s in kept.items()}
     by_tmdb = {s["tmdb"]: name for name, s in kept.items()}
     out = {"titles": 0, "new": 0, "removed": 0, "posters": 0}
-    budget = [400]
+    budget = [POSTERS_PER_RUN]
     own = http is None
     client = http or httpx.Client(timeout=20, follow_redirects=True)
     try:

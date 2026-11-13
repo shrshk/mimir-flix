@@ -39,6 +39,8 @@ POSTER = "https://image.tmdb.org/t/p/w342"
 BACKDROP = "https://image.tmdb.org/t/p/w1280"  # wide, for Home's featured title
 KEPT_FOR = 24 * 3600
 LOOKUPS = 8  # the first 8 movies and shows of a search are looked up; the rest are rarely what was meant
+FULL_MIN_VOTES = 5  # an app's whole catalogue (On my apps) leaves out titles with fewer votes
+MAX_DISCOVER_PAGES = 500  # TMDB serves no page after 500
 TRENDING = 20  # Home's row: the week's top 20, of which those on the house's apps show
 CATEGORIES = ("flatrate", "free", "ads")  # subscriptions and free; renting and buying are left out
 
@@ -281,18 +283,52 @@ class Streaming:
                 out.append({"app": app.key, "name": app.name, "items": items})
         return out
 
+    def on_app(self, app: App, cap: int, ids: list[int], min_votes: int = FULL_MIN_VOTES) -> list[dict]:
+        """Everything on one app in this country (subscription or free), most popular first, up to cap: TMDB's
+        discover, page by page (20 a page, each kept a day), movies and shows merged by popularity. Titles with
+        fewer than min_votes votes are left out (TMDB has many near-empty entries)."""
+        hits: list[dict] = []
+        for kind in ("movie", "tv"):
+            page, pages = 1, 1
+            while (
+                page <= pages and page <= MAX_DISCOVER_PAGES and len([h for h in hits if h["media_type"] == kind]) < cap
+            ):
+                found = self._get(
+                    f"/discover/{kind}",
+                    with_watch_providers="|".join(map(str, ids)),
+                    watch_region=self.region,
+                    with_watch_monetization_types="flatrate|free|ads",
+                    sort_by="popularity.desc",
+                    include_adult="false",
+                    language="en-US",
+                    page=str(page),
+                    **{"vote_count.gte": str(min_votes)},
+                )
+                hits += [h | {"media_type": kind} for h in found.get("results", [])]
+                pages, page = found.get("total_pages", 1), page + 1
+        hits.sort(key=lambda h: h.get("popularity") or 0, reverse=True)
+        return [self._item(h, [app]) for h in hits if h.get("poster_path")][:cap]
+
     def catalog(self, per_app: int) -> list[dict]:
-        """What is popular on each of the house's apps, then the week's trending titles on them, each once (for
-        onapps.py's library): the rows' titles, up to per_app per app."""
-        seen, out = set(), []
-        for row in self.rows(per_row=per_app, at_least=1):
-            for it in row["items"]:
-                if it["tmdb"] not in seen:
-                    seen.add(it["tmdb"])
-                    out.append(it)
+        """Everything on each of the house's apps (up to per_app each, most popular first), then the week's
+        trending titles on them, each once (for onapps.py's library). A title on two apps carries both."""
+        seen: dict[str, dict] = {}
+        out = []
+        ids = self.provider_ids() if self.ready else {}
+        for app in self.apps:
+            if not ids.get(app.key):
+                continue
+            for it in self.on_app(app, per_app, ids[app.key]):
+                if it["tmdb"] in seen:
+                    have = seen[it["tmdb"]]["apps"]
+                    if all(a["app"] != app.key for a in have):
+                        have.append(link(app, it["title"]))
+                    continue
+                seen[it["tmdb"]] = it
+                out.append(it)
         for it in self.trending():
             if it["tmdb"] not in seen:
-                seen.add(it["tmdb"])
+                seen[it["tmdb"]] = it
                 out.append(it)
         return out
 

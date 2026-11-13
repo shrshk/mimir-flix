@@ -1,10 +1,11 @@
 """Wholphin's home page, laid out like mimir-flix's: continue watching, one row per streaming app (On my apps),
-then rows per language and kind (TV serials, web series, movies), TV channels, and new episodes. Wholphin (an Android TV app
-for Jellyfin) reads its home rows from the user's Jellyfin display preferences ("default", client "Wholphin", custom pref "home_settings", version 1)
-when the TV has none of its own; this writes them there.
+then rows per language and kind (TV serials, web series, movies), TV channels, and new episodes.
 
-Settings ("wholphin_home" in settings.json): {"languages": ["Telugu", "Hindi", "English"], "channels": ["…"]}.
-Rows use the tags mirror.py writes into each title's .nfo: the language, and "<language> · <kind>"."""
+Wholphin (an Android TV app for Jellyfin) reads its home rows from the user's Jellyfin display preferences
+("default", client "Wholphin", custom pref "home_settings", version 1) when the TV has none of its own; this writes
+them there. Settings ("wholphin_home" in settings.json): {"languages": ["Telugu", "Hindi", "English"],
+"channels": ["…"]}. Rows use the tags mirror.py writes into each title's .nfo: the language, and
+"<language> · <kind>"."""
 
 import json
 

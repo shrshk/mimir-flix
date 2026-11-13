@@ -274,14 +274,16 @@ def test_an_on_my_apps_title_opens_its_app_only_when_the_tv_plays_it(tmp_path):
     opened = []
     app = FastAPI()
     tv_only = lambda request: request.headers.get("x-forwarded-for") == "192.0.2.25"  # noqa: E731
-    app.include_router(
-        router(Streaming("eyJtok", tmp_path / "m.db"), lambda *a: opened.append(a), tv_only)
-    )
+    app.include_router(router(Streaming("eyJtok", tmp_path / "m.db"), lambda *a: opened.append(a), tv_only))
     c = TestClient(app)
     r = c.get("/api/streaming/launch", params={"app": "peacock", "tmdb": "tv/2", "title": "The Office"})
     assert r.status_code == 200 and r.headers["content-type"] == "video/mp4" and len(r.content) > 1000
     assert opened == []  # Jellyfin reading the file (or anyone else): the clip only, nothing opens
-    tv = c.get("/api/streaming/launch", params={"app": "peacock", "title": "The Office"}, headers={"x-forwarded-for": "192.0.2.25"})
+    tv = c.get(
+        "/api/streaming/launch",
+        params={"app": "peacock", "title": "The Office"},
+        headers={"x-forwarded-for": "192.0.2.25"},
+    )
     assert tv.status_code == 200
     for _ in range(50):
         if opened:
@@ -302,3 +304,52 @@ def test_an_app_with_another_package_on_some_tvs_opens_the_installed_one(tmp_pat
     apple = next(a for a in pick("appletv"))
     Tv("tv", tmp_path / "adbkey").open_app(apple.packages)
     assert sent[-1] == "monkey -p com.apple.atve.sony.appletv -c android.intent.category.LEANBACK_LAUNCHER 1"
+
+
+def test_on_my_apps_takes_each_apps_whole_catalogue_page_by_page_up_to_a_cap(tmp_path):
+    calls = []
+
+    def movie(i, pop, poster=True):
+        return {"id": i, "title": f"M{i}", "popularity": pop, "poster_path": f"/{i}.jpg" if poster else None}
+
+    def handler(request):
+        calls.append(request.url)
+        p, q = request.url.path, request.url.params
+        if p.startswith("/3/watch/providers/"):
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"provider_id": 8, "provider_name": "Netflix"},
+                        {"provider_id": 386, "provider_name": "Peacock"},
+                    ]
+                },
+            )
+        if p == "/3/trending/all/week":
+            return httpx.Response(200, json={"results": []})
+        assert q["vote_count.gte"] == "5" and q["sort_by"] == "popularity.desc"
+        netflix, page = q["with_watch_providers"] == "8", q["page"]
+        if p == "/3/discover/movie" and netflix:
+            pages = {"1": [movie(1, 50), movie(2, 10)], "2": [movie(3, 30, poster=False)]}
+            return httpx.Response(200, json={"results": pages[page], "total_pages": 2})
+        if p == "/3/discover/tv" and netflix:
+            show = {"id": 4, "name": "S4", "popularity": 40, "poster_path": "/4.jpg"}
+            return httpx.Response(200, json={"results": [show], "total_pages": 1})
+        if p == "/3/discover/movie":
+            return httpx.Response(200, json={"results": [movie(1, 50)], "total_pages": 1})
+        return httpx.Response(200, json={"results": [], "total_pages": 1})
+
+    s = Streaming("eyJtok", tmp_path / "m.db", pick("netflix,peacock"), transport=httpx.MockTransport(handler))
+    titles = s.catalog(per_app=10)
+    # Every page read, most popular first, a title without a poster left out; on two apps, it says both.
+    assert [(t["title"], [a["name"] for a in t["apps"]]) for t in titles] == [
+        ("M1", ["Netflix", "Peacock"]),
+        ("S4", ["Netflix"]),
+        ("M2", ["Netflix"]),
+    ]
+    assert any(u.path == "/3/discover/movie" and u.params["page"] == "2" for u in calls)
+    # The cap stops the paging early.
+    calls.clear()
+    netflix = pick("netflix")[0]
+    assert [t["title"] for t in s.on_app(netflix, 1, [8])] == ["M1"]
+    assert not any(u.params.get("page") == "2" for u in calls)
