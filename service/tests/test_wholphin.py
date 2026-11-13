@@ -64,30 +64,29 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
         "wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": ["channel one", "Nowhere"]},
         "streaming_apps": "netflix,peacock",  # Peacock has nothing in On my apps: no row
     }
-    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "10 rows written"
+    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "9 rows written"
 
     saved = json.loads(fake.prefs["CustomPrefs"]["home_settings"])
     assert saved["version"] == 1 and fake.prefs["CustomPrefs"]["other"] == "kept" and fake.prefs["SortBy"] == "SortName"
     names = [r.get("name") or r["type"] + (":" + r["kind"] if "kind" in r else "") for r in saved["rows"]]
-    # Language order as asked; a kind with nothing in it is left out; English shows have no kind, so one row;
+    # Continue watching first, then the apps, then languages in the order asked; a kind with nothing in it is left out; English shows have no kind, so one row;
     # an unknown channel is left out; new episodes last.
     assert names == [
-        "Favorite:Series",
-        "Favorite:Movie",
+        "ContinueWatchingCombined",
+        "On Netflix",
         "Telugu TV serials",
         "Telugu movies",
         "Hindi web series",
         "English shows",
         "English movies",
-        "On Netflix",
         "Channel One",
         "RecentlyAdded",
     ]
     serials = saved["rows"][2]["filter"]
     assert serials["tags"] == ["Telugu · TV serial"] and serials["parentId"] == SHOWS
     assert serials["includeItemTypes"] == ["Series"] and serials["sortBy"] == ["DateCreated"]
-    assert saved["rows"][7]["filter"]["tags"] == ["Netflix"] and saved["rows"][7]["filter"]["parentId"] == "lib-apps"
-    assert saved["rows"][8]["filter"]["studioIds"] == ["st1"]
+    assert saved["rows"][1]["filter"]["tags"] == ["Netflix"] and saved["rows"][1]["filter"]["parentId"] == "lib-apps"
+    assert saved["rows"][7]["filter"]["studioIds"] == ["st1"]
 
     # The same layout again is not written again.
     assert wholphin.home(jf, "My TV", "My TV Movies", cfg).endswith("unchanged") and fake.posts == 1

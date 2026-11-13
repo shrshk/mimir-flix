@@ -1,5 +1,5 @@
-"""Wholphin's home page, laid out like mimir-flix's: My list, then rows per language and kind (TV serials, web
-series, movies), one per streaming app (On my apps), TV channels, and new episodes. Wholphin (an Android TV app
+"""Wholphin's home page, laid out like mimir-flix's: continue watching, one row per streaming app (On my apps),
+then rows per language and kind (TV serials, web series, movies), TV channels, and new episodes. Wholphin (an Android TV app
 for Jellyfin) reads its home rows from the user's Jellyfin display preferences ("default", client "Wholphin", custom pref "home_settings", version 1)
 when the TV has none of its own; this writes them there.
 
@@ -46,7 +46,10 @@ def rows(
             | filters,
         }
 
-    out = [{"type": "Favorite", "kind": "Series"}, {"type": "Favorite", "kind": "Movie"}]
+    out = [{"type": "ContinueWatchingCombined"}]  # favourites (the watchlist) are in Wholphin's side menu
+    for app in apps if apps_lib else []:
+        if count(ParentId=apps_lib, IncludeItemTypes="Movie", Tags=app):
+            out.append(query(f"On {app}", apps_lib, "Movie", tags=[app]))
     for lang in languages:
         shown = False
         for kind, label in KINDS:
@@ -58,9 +61,6 @@ def rows(
             out.append(query(f"{lang} shows", shows_lib, "Series", tags=[lang]))
         if count(ParentId=movies_lib, IncludeItemTypes="Movie", Tags=lang):
             out.append(query(f"{lang} movies", movies_lib, "Movie", tags=[lang]))
-    for app in apps if apps_lib else []:
-        if count(ParentId=apps_lib, IncludeItemTypes="Movie", Tags=app):
-            out.append(query(f"On {app}", apps_lib, "Movie", tags=[app]))
     for name in channels:
         found = (jf._call("GET", "/Studios", {"SearchTerm": name, "ParentId": shows_lib}) or {}).get("Items", [])
         studio = next((s for s in found if s["Name"].lower() == name.lower()), None)
