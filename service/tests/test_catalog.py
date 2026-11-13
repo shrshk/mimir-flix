@@ -747,7 +747,7 @@ def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins
 
     meta = {
         MOVIE: {"plot": "Cops & robbers <LA>", "language": "English", "genres": ["4K"], "thumb": "http://p.example/heat.jpg"},
-        SHOW: {"language": "Hindi", "genres": ["TV serial"], "studio": "Star Plus", "thumb": "http://p.example/x.html"},
+        SHOW: {"language": "Hindi", "genres": ["TV serial"], "studio": "Channel One", "thumb": "http://p.example/x.html"},
     }
     plain = cat.everything
     cat.everything = lambda: [x | meta.get(x["url"], {}) for x in plain()]
@@ -760,7 +760,7 @@ def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins
     assert "<genre>English</genre>" in movie and "<genre>4K</genre>" in movie and "<tag>English</tag>" in movie
     assert (movies_root / "Heat (1995)/poster.jpg").read_bytes() == b"jpeg"
     show = (shows_root / "Dark/tvshow.nfo").read_text()
-    assert "<genre>Hindi</genre>" in show and "<genre>TV serial</genre>" in show and "<studio>Star Plus</studio>" in show
+    assert "<genre>Hindi</genre>" in show and "<genre>TV serial</genre>" in show and "<studio>Channel One</studio>" in show
     assert not (shows_root / "Dark/poster.jpg").exists()  # the host sent a page, not an image
 
     # Nothing changed: the files are left alone (Jellyfin reads a changed file again) and the poster is not fetched.
