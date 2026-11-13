@@ -295,6 +295,30 @@ def test_tv_opens_the_jellyfin_app_when_it_is_closed_and_waits_for_it(tmp_path, 
     assert slept[-1] >= 2
 
 
+def test_tv_brings_the_app_forward_when_it_was_left_in_the_background(tmp_path, monkeypatch):
+    # Left for TV Home, the app keeps its Jellyfin session for minutes but cannot come forward by itself: a play
+    # sent to it then shows nothing. It is brought to the front first; when it is in front already, no wait.
+    monkeypatch.setattr("tests.test_jf.SESSIONS", [dict(TV_APP)])
+    monkeypatch.setattr("tests.test_jf.PLAYED", [])
+    front = [False]
+    calls = []
+
+    def open_app():
+        calls.append(1)
+        was_front, front[0] = front[0], True
+        return not was_front
+
+    jf = Jellyfin("http://jf", "secret-key", transport=httpx.MockTransport(fake))
+    c = TestClient(create_app(jf, tmp_path / "picks", router(jf, None, "https://lan.example", open_app)))
+    slept = []
+    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", slept.append)
+    assert c.post("/api/jf/tv", json={"id": MOVIE}).status_code == 200
+    assert calls == [1] and slept and slept[-1] >= 2 and [p[0] for p in PLAYED] == ["tv"]
+    slept.clear()
+    assert c.post("/api/jf/tv", json={"id": MOVIE}).status_code == 200
+    assert calls == [1, 1] and all(s < 2 for s in slept) and len(PLAYED) == 2  # in front already: no settling
+
+
 def test_tv_asks_for_the_jellyfin_app_when_it_is_closed(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.test_jf.SESSIONS", [PHONE_APP])  # never the phone
     monkeypatch.setattr("tests.test_jf.PLAYED", [])

@@ -54,12 +54,19 @@ class Tv:
         finally:
             dev.close()
 
-    def open_jellyfin(self) -> None:
-        launch = "monkey -p {} -c android.intent.category.LEANBACK_LAUNCHER 1"
-        self.shell(
-            f"input keyevent KEYCODE_WAKEUP; if pm path {WHOLPHIN} >/dev/null 2>&1;"
-            f" then {launch.format(WHOLPHIN)}; else {launch.format(JELLYFIN_APP)}; fi"
+    def open_jellyfin(self) -> bool:
+        """Brings the Jellyfin TV app (Wholphin when installed, else Jellyfin's own) to the front, waking the TV.
+        False when one was already in front: a play command then reaches it. An app left in the background keeps
+        its Jellyfin session for minutes but cannot come forward by itself, so a play sent to it shows nothing."""
+        apps = f"{WHOLPHIN}|{JELLYFIN_APP}"
+        launch = "monkey -p {} -c android.intent.category.LEANBACK_LAUNCHER 1 >/dev/null 2>&1"
+        out = self.shell(
+            f"if [ \"$(dumpsys power | grep -c 'mWakefulness=Awake')\" = 1 ] &&"
+            f" dumpsys activity activities | grep -m1 mResumedActivity | grep -qE '{apps}'; then echo front;"
+            f" else input keyevent KEYCODE_WAKEUP; if pm path {WHOLPHIN} >/dev/null 2>&1;"
+            f" then {launch.format(WHOLPHIN)}; else {launch.format(JELLYFIN_APP)}; fi; echo opened; fi"
         )
+        return "front" not in out
 
     def open_overlay(self) -> None:
         """Starts the TV app's message overlay (I4), which stops by itself after a quiet spell. No wake key: a TV

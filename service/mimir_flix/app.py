@@ -391,7 +391,7 @@ def main() -> None:
     media_root = Path(cfg["media_root"])
     # 📺 TV opens the Jellyfin TV app when it is closed (the TV trusts this machine's ADB key: Pair on the Settings page).
     tv = Tv(settings.default_tv(cfg), config / "adbkey") if settings.default_tv(cfg) else None
-    open_app = tv.open_jellyfin if tv else None
+    open_app = (lambda: tv_answer(tv.open_jellyfin)) if tv else None
     # Provider plugins (catalog.py): the ones in Settings whose plugin is installed.
     catalogs = Catalogs(config, vault, data)
     # My list, for every house: streaming titles, library titles and providers' shows and videos.
@@ -462,6 +462,16 @@ def mcp_token(path: Path) -> str:
         finally:
             os.umask(old)
     return path.read_text().strip()
+
+
+def tv_answer(fn):
+    """A TV call whose answer helps but is not needed: None when the TV is not answering (a play command still
+    goes to the Jellyfin TV app if it is connected)."""
+    try:
+        return fn()
+    except TvError as e:
+        print("tv:", e)
+        return None
 
 
 def tv_try(fn):

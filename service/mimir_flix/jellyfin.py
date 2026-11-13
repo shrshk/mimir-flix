@@ -360,12 +360,12 @@ class Jellyfin:
         raise JellyfinError("Swiftfin did not open")
 
     def play_on_tv(self, item_id: str, open_app=None, wait: float = 1, tries: int = 30, settle: float = 3) -> None:
-        """Starts it in the Jellyfin TV app. When the app is closed, open_app (if given)
-        wakes the TV and opens it, and this waits for the app to connect, then `settle` seconds more: the app
-        connects before its home screen has loaded, and a play command then shows "no playable items" first."""
+        """Starts it in the Jellyfin TV app. open_app (if given) brings the app to the front unless it already is
+        (it returns False then): an app left in the background still has a session but cannot come forward for a
+        play command. After opening, this waits for the app to connect, then `settle` seconds more: the app connects
+        before its home screen has loaded, and a play command then shows "no playable items" first."""
         tv = self.tv_session()
-        if not tv and open_app:
-            open_app()
+        if open_app and open_app() is not False:  # it was closed or behind another app: opened now
             for _ in range(tries):
                 time.sleep(wait)
                 if tv := self.tv_session():
