@@ -52,6 +52,22 @@ passwords.
 | `scripts/restore-mac.sh <backup>` | Puts a nightly backup back (asks first; keeps what is there as *.before-restore) |
 | `/tv/app.apk` | The TV app ([mimir-flix-tv](https://github.com/shrshk/mimir-flix-tv), its own repo) for the TV's Downloader app; Settings → TV app has the steps |
 | `scripts/install-mac.sh` | Install or update the app (`--remove` to remove it; files and settings stay) |
+| `mimir-flix-tv-setup <tv>` | Another TV set up like the first (below) |
+
+### Another TV
+
+Most of what makes the TV work lives in Jellyfin on this Mac and follows the Jellyfin user to any TV: Wholphin's home
+rows, the catalogue's collections by language, the apps' "Popular on" playlists, titles, posters and badges. A new TV
+needs its apps, a sign-in and a screensaver:
+
+1. Pair the TV on the Settings page (TVs), once.
+2. `mimir-flix-tv-setup <tv>`: opens the Play Store page of each missing app on the TV ([Wholphin](https://github.com/damontecres/Wholphin),
+   [Immich TV](https://github.com/giejay/Immich-Android-TV)), one at a time (press Install, run it again), and makes Immich TV the screensaver.
+3. In Wholphin, pick the server and Add user: it shows a Quick Connect code. `mimir-flix-tv-setup <tv> --approve CODE`
+   signs it in as the house's Jellyfin user, with no password typed on the TV.
+4. Wholphin: Settings → Home → use the server's layout. Immich TV: sign in, then Settings → Screensaver → the albums.
+
+Wholphin's own app settings (playback, theme) stay on each TV.
 
 ## Settings
 

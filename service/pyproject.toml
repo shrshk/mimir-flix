@@ -20,6 +20,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 mimir-flix = "mimir_flix.app:main"
+mimir-flix-tv-setup = "mimir_flix.tvsetup:main"
 
 [build-system]
 requires = ["hatchling"]
