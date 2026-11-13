@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from jobkit import Jobs, page_html
 
-from mimir_flix import mirror, settings, wholphin
+from mimir_flix import mirror, onapps, settings, wholphin
 from mimir_flix.catalog import CatalogError, Catalogs, Job
 from mimir_flix.catalog_routes import libraries, roots
 from mimir_flix.jellyfin import Jellyfin
@@ -21,10 +21,12 @@ from mimir_flix.wizard import allowed
 
 NEW_EPISODES = "new-episodes"
 WHOLE_CATALOGUE = "whole-catalogue"
+ON_MY_APPS = "on-my-apps"
 
 
 def define(jobs: Jobs) -> None:
     jobs.define(NEW_EPISODES, "New episodes: added shows into Jellyfin, My list shows marked", "hourly")
+    jobs.define(ON_MY_APPS, "On my apps: what is popular on the house's streaming apps, into Jellyfin", "daily")
     jobs.define(
         WHOLE_CATALOGUE, "Whole catalogue: every movie and show into Jellyfin, a batch of shows a run", "hourly"
     )
@@ -88,6 +90,23 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
             if cfg.get("wholphin_home"):
                 notes.append("Wholphin home: " + wholphin.home(jf, names["shows"], names["movies"], cfg))
         run.summary = "; ".join(notes) or "no provider has the whole catalogue turned on"
+        return run.summary
+
+
+def on_my_apps(jobs: Jobs, streaming, jf: Jellyfin, media_root: Path, base: str) -> str:
+    """The streaming apps' popular titles into the On my apps library (onapps.py), made when missing."""
+    with jobs.run(ON_MY_APPS) as run:
+        if not streaming.ready:
+            run.summary = "no TMDB token (Settings)"
+            return run.summary
+        root = media_root / "apps"
+        done = onapps.fill(streaming, root, base)
+        lib = next((x for x in jf.libraries() if x["Name"] == onapps.LIBRARY), None)
+        if lib is None:
+            jf.create_library(onapps.LIBRARY, "movies", [str(root)])
+        elif done["new"] or done["removed"] or done["posters"]:
+            jf.scan(lib.get("ItemId"))
+        run.summary = f"{done['titles']} titles ({done['new']} new, {done['removed']} removed)"
         return run.summary
 
 

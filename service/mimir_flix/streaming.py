@@ -20,8 +20,8 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from mimir_flix.tv import TvError
@@ -50,6 +50,12 @@ class App:
     package: str  # the TV app
     web: str  # on the phone: the app's search for the title ({q}), or its home page; the app opens the link
     providers: str  # TMDB provider names that play in this app
+    alt: tuple[str, ...] = ()  # the same app under another package on some TVs
+
+    @property
+    def packages(self) -> str:
+        """The TV app's packages, "|"-joined: the TV opens whichever is installed (Tv.open_app)."""
+        return "|".join((self.package, *self.alt))
 
 
 # Every app mimir-flix knows; settings' streaming_apps picks the ones a house pays for (empty: all of them).
@@ -73,6 +79,7 @@ APPS = [
         "com.apple.atve.androidtv.appletv",
         "https://tv.apple.com/search?term={q}",
         r"^apple tv\+|^apple tv plus",
+        ("com.apple.atve.sony.appletv",),  # Sony's
     ),
     App(
         "paramount",
@@ -274,6 +281,21 @@ class Streaming:
                 out.append({"app": app.key, "name": app.name, "items": items})
         return out
 
+    def catalog(self, per_app: int) -> list[dict]:
+        """What is popular on each of the house's apps, then the week's trending titles on them, each once (for
+        onapps.py's library): the rows' titles, up to per_app per app."""
+        seen, out = set(), []
+        for row in self.rows(per_row=per_app, at_least=1):
+            for it in row["items"]:
+                if it["tmdb"] not in seen:
+                    seen.add(it["tmdb"])
+                    out.append(it)
+        for it in self.trending():
+            if it["tmdb"] not in seen:
+                seen.add(it["tmdb"])
+                out.append(it)
+        return out
+
     def _item(self, h: dict, apps: list[App]) -> dict:
         title = h.get("title") or h.get("name") or ""
         date = h.get("release_date") or h.get("first_air_date") or ""
@@ -310,13 +332,28 @@ class Streaming:
             return [r for r in pool.map(one, hits) if r]
 
 
+def tv_quiet(open_app, *args) -> None:
+    """open_app from a background thread: a TV that does not answer is reported, never raised."""
+    try:
+        open_app(*args)
+    except TvError as e:
+        print("tv:", e)
+
+
 class Open(BaseModel):
     app: str
     title: str = ""
     tmdb: str = ""  # "tv/96677": then the app opens at the title itself where JustWatch has its link
 
 
-def router(streaming: Streaming, open_app: Callable[[str, str, str], None] | None) -> APIRouter:
+LAUNCH_CLIP = Path(__file__).parent / "static" / "launch.mp4"  # 3 s of black, what the player shows meanwhile
+
+
+def router(
+    streaming: Streaming,
+    open_app: Callable[[str, str, str], None] | None,
+    from_tv: Callable[[Request], bool] = lambda request: False,
+) -> APIRouter:
     api = APIRouter(prefix="/api/streaming")
 
     @api.get("/status")
@@ -360,9 +397,22 @@ def router(streaming: Streaming, open_app: Callable[[str, str, str], None] | Non
         if open_app is None:
             raise HTTPException(409, "No TV set up (add one on the Settings page)")
         try:
-            open_app(app.package, body.title[:200], streaming.title_link(app, body.tmdb, body.title[:200]))
+            open_app(app.packages, body.title[:200], streaming.title_link(app, body.tmdb, body.title[:200]))
         except TvError as e:
             raise HTTPException(502, str(e)) from e
+
+    @api.get("/launch")
+    def launch(request: Request, app: str, tmdb: str = "", title: str = ""):
+        """An On my apps title played in a Jellyfin app (onapps.py's .strm): on the TV, opens the streaming app at the
+        title. Anyone else (Jellyfin reading the file, a phone) only gets the clip, so nothing opens by surprise."""
+        found = next((a for a in streaming.apps if a.key == app), None)
+        if found is None:
+            raise HTTPException(404, "not one of the house's apps")
+        if open_app is not None and from_tv(request):
+            name = title[:200]
+            link = streaming.title_link(found, tmdb, name)
+            threading.Thread(target=lambda: tv_quiet(open_app, found.packages, name, link), daemon=True).start()
+        return FileResponse(LAUNCH_CLIP, media_type="video/mp4")
 
     @api.get("/go")
     def go(app: str, title: str = "", tmdb: str = ""):

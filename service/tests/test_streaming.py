@@ -1,4 +1,5 @@
 import shlex
+import time
 from datetime import date
 
 import httpx
@@ -267,3 +268,37 @@ def test_homes_app_rows_are_each_apps_popular_titles(tmp_path):
     n = len(tmdb.calls)
     s.rows(at_least=1, today=date(2026, 10, 31))
     assert len(tmdb.calls) == n  # kept a day
+
+
+def test_an_on_my_apps_title_opens_its_app_only_when_the_tv_plays_it(tmp_path):
+    opened = []
+    app = FastAPI()
+    tv_only = lambda request: request.headers.get("x-forwarded-for") == "192.0.2.25"  # noqa: E731
+    app.include_router(
+        router(Streaming("eyJtok", tmp_path / "m.db"), lambda *a: opened.append(a), tv_only)
+    )
+    c = TestClient(app)
+    r = c.get("/api/streaming/launch", params={"app": "peacock", "tmdb": "tv/2", "title": "The Office"})
+    assert r.status_code == 200 and r.headers["content-type"] == "video/mp4" and len(r.content) > 1000
+    assert opened == []  # Jellyfin reading the file (or anyone else): the clip only, nothing opens
+    tv = c.get("/api/streaming/launch", params={"app": "peacock", "title": "The Office"}, headers={"x-forwarded-for": "192.0.2.25"})
+    assert tv.status_code == 200
+    for _ in range(50):
+        if opened:
+            break
+        time.sleep(0.02)
+    assert opened == [("com.peacocktv.peacockandroid", "The Office", "")]
+    assert c.get("/api/streaming/launch", params={"app": "com.evil"}).status_code == 404
+
+
+def test_an_app_with_another_package_on_some_tvs_opens_the_installed_one(tmp_path, monkeypatch):
+    sent = []
+
+    def shell(self, command):
+        sent.append(command)
+        return "com.apple.atve.sony.appletv\n" if command.startswith("pm path") else ""
+
+    monkeypatch.setattr(Tv, "shell", shell)
+    apple = next(a for a in pick("appletv"))
+    Tv("tv", tmp_path / "adbkey").open_app(apple.packages)
+    assert sent[-1] == "monkey -p com.apple.atve.sony.appletv -c android.intent.category.LEANBACK_LAUNCHER 1"

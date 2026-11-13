@@ -15,6 +15,7 @@ TITLES = [  # (library, type, tags)
     (SHOWS, "Series", ["English"]),
     (MOVIES, "Movie", ["Telugu", "Indian movies", "Telugu · Indian movies"]),
     (MOVIES, "Movie", ["English", "4K", "English · 4K"]),
+    ("lib-apps", "Movie", ["Netflix", "Movie"]),
 ]
 
 
@@ -29,7 +30,12 @@ class FakeJellyfin:
             return httpx.Response(200, json=[{"Id": "u1", "Policy": {"IsAdministrator": True}}])
         if path == "/Library/VirtualFolders":
             return httpx.Response(
-                200, json=[{"Name": "My TV", "ItemId": SHOWS}, {"Name": "My TV Movies", "ItemId": MOVIES}]
+                200,
+                json=[
+                    {"Name": "My TV", "ItemId": SHOWS},
+                    {"Name": "My TV Movies", "ItemId": MOVIES},
+                    {"Name": "On my apps", "ItemId": "lib-apps"},
+                ],
             )
         if path == "/Items":
             n = sum(
@@ -54,8 +60,11 @@ class FakeJellyfin:
 def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
     fake = FakeJellyfin()
     jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
-    cfg = {"wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": ["channel one", "Nowhere"]}}
-    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "9 rows written"
+    cfg = {
+        "wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": ["channel one", "Nowhere"]},
+        "streaming_apps": "netflix,peacock",  # Peacock has nothing in On my apps: no row
+    }
+    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "10 rows written"
 
     saved = json.loads(fake.prefs["CustomPrefs"]["home_settings"])
     assert saved["version"] == 1 and fake.prefs["CustomPrefs"]["other"] == "kept" and fake.prefs["SortBy"] == "SortName"
@@ -70,13 +79,15 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
         "Hindi web series",
         "English shows",
         "English movies",
+        "On Netflix",
         "Channel One",
         "RecentlyAdded",
     ]
     serials = saved["rows"][2]["filter"]
     assert serials["tags"] == ["Telugu · TV serial"] and serials["parentId"] == SHOWS
     assert serials["includeItemTypes"] == ["Series"] and serials["sortBy"] == ["DateCreated"]
-    assert saved["rows"][7]["filter"]["studioIds"] == ["st1"]
+    assert saved["rows"][7]["filter"]["tags"] == ["Netflix"] and saved["rows"][7]["filter"]["parentId"] == "lib-apps"
+    assert saved["rows"][8]["filter"]["studioIds"] == ["st1"]
 
     # The same layout again is not written again.
     assert wholphin.home(jf, "My TV", "My TV Movies", cfg).endswith("unchanged") and fake.posts == 1

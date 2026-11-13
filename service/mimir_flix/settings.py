@@ -33,6 +33,9 @@ DEFAULTS = {
     # pays for.
     "streaming_apps": "",  # e.g. "netflix,prime,peacock" (keys in streaming.APPS); empty: every app
     "streaming_region": "US",  # the country whose catalogues count
+    # Wholphin's home rows (wholphin.py), written to the user's Jellyfin profile: {"languages": ["Telugu", "Hindi"],
+    # "channels": ["…"]} (TV channels as studios); empty: Wholphin's own home is left alone.
+    "wholphin_home": {},
     # Recommendations everywhere (the page and an assistant) leave these out: genre names, and keep only these
     # original languages (codes like te, hi, en; empty: every language).
     # Providers (Settings adds them): [{"id", "name", "kind", …}]. kind is m3u or xtream (IPTV, with "server"?,
@@ -73,7 +76,7 @@ def load(config: Path | None = None) -> dict:
     out = DEFAULTS | found
     for name, default in DEFAULTS.items():
         env = os.environ.get(f"MIMIR_FLIX_{name.upper()}")
-        if env is not None and not isinstance(default, list):
+        if env is not None and not isinstance(default, (list, dict)):
             out[name] = type(default)(env)
     if not out["tvs"] and out["tv_host"]:
         out["tvs"] = [{"name": "TV", "host": out["tv_host"], "kind": "android"}]

@@ -1,6 +1,6 @@
 """Wholphin's home page, laid out like mimir-flix's: My list, then rows per language and kind (TV serials, web
-series, movies), TV channels, and new episodes. Wholphin (an Android TV app for Jellyfin) reads its home rows from
-the user's Jellyfin display preferences ("default", client "Wholphin", custom pref "home_settings", version 1)
+series, movies), one per streaming app (On my apps), TV channels, and new episodes. Wholphin (an Android TV app
+for Jellyfin) reads its home rows from the user's Jellyfin display preferences ("default", client "Wholphin", custom pref "home_settings", version 1)
 when the TV has none of its own; this writes them there.
 
 Settings ("wholphin_home" in settings.json): {"languages": ["Telugu", "Hindi", "English"], "channels": ["…"]}.
@@ -9,13 +9,24 @@ Rows use the tags mirror.py writes into each title's .nfo: the language, and "<l
 import json
 
 from mimir_flix.jellyfin import Jellyfin
+from mimir_flix.onapps import LIBRARY
+from mimir_flix.streaming import pick
 
 PREFS_ID, CLIENT, KEY, VERSION = "default", "Wholphin", "home_settings", 1
 KINDS = [("TV serial", "TV serials"), ("Web series", "web series")]
 
 
-def rows(jf: Jellyfin, shows_lib: str, movies_lib: str, languages: list[str], channels: list[str]) -> list[dict]:
-    """The rows, in order; a row with nothing in it is left out. shows_lib, movies_lib: library item ids."""
+def rows(
+    jf: Jellyfin,
+    shows_lib: str,
+    movies_lib: str,
+    languages: list[str],
+    channels: list[str],
+    apps_lib: str | None = None,
+    apps: list[str] = (),
+) -> list[dict]:
+    """The rows, in order; a row with nothing in it is left out. shows_lib, movies_lib, apps_lib: library item ids;
+    apps: the streaming apps' names (onapps.py tags each title with them)."""
 
     def count(**filters) -> int:
         params = {"Recursive": "true", "Limit": "0", "userId": jf.user()} | filters
@@ -47,6 +58,9 @@ def rows(jf: Jellyfin, shows_lib: str, movies_lib: str, languages: list[str], ch
             out.append(query(f"{lang} shows", shows_lib, "Series", tags=[lang]))
         if count(ParentId=movies_lib, IncludeItemTypes="Movie", Tags=lang):
             out.append(query(f"{lang} movies", movies_lib, "Movie", tags=[lang]))
+    for app in apps if apps_lib else []:
+        if count(ParentId=apps_lib, IncludeItemTypes="Movie", Tags=app):
+            out.append(query(f"On {app}", apps_lib, "Movie", tags=[app]))
     for name in channels:
         found = (jf._call("GET", "/Studios", {"SearchTerm": name, "ParentId": shows_lib}) or {}).get("Items", [])
         studio = next((s for s in found if s["Name"].lower() == name.lower()), None)
@@ -77,5 +91,8 @@ def home(jf: Jellyfin, shows_name: str, movies_name: str, cfg: dict) -> str:
     libs = {x["Name"]: x.get("ItemId") for x in jf.libraries()}
     if not (libs.get(shows_name) and libs.get(movies_name)):
         return "the catalogue's libraries are not in Jellyfin yet"
-    layout = rows(jf, libs[shows_name], libs[movies_name], want["languages"], want.get("channels", []))
+    apps = [a.name for a in pick(cfg.get("streaming_apps", ""))]
+    layout = rows(
+        jf, libs[shows_name], libs[movies_name], want["languages"], want.get("channels", []), libs.get(LIBRARY), apps
+    )
     return f"{len(layout)} rows" + (" written" if write(jf, layout) else ", unchanged")

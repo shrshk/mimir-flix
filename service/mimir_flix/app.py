@@ -41,7 +41,7 @@ from mimir_flix.catalog_routes import router as catalog_router
 from mimir_flix import backup
 from mimir_flix import jobs as app_jobs
 from mimir_flix import settings
-from mimir_flix.streaming import Streaming, pick
+from mimir_flix.streaming import Streaming, StreamingError, pick
 from mimir_flix.streaming import router as streaming_router
 from mimir_flix.taste import Taste
 from mimir_flix.taste import router as taste_router
@@ -117,6 +117,7 @@ def create_app(
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
         return response
+
     for r in routers:
         app.include_router(r)
 
@@ -397,9 +398,9 @@ def main() -> None:
     catalogs = Catalogs(config, vault, data)
     # My list, for every house: streaming titles, library titles and providers' shows and videos.
     watchlist = Watchlist(data / "mimir-flix.db")
-    routers = [jf_router(
-            jf, kodi, resolver, open_app, watchlist, hidden=lambda: hidden_libraries(catalogs), play_app=play_app
-        )]
+    routers = [
+        jf_router(jf, kodi, resolver, open_app, watchlist, hidden=lambda: hidden_libraries(catalogs), play_app=play_app)
+    ]
     # Where titles stream, filtered to the house's apps: TMDB, with its API Read Access Token (from your password manager) in
     # this file. Without it, search shows only Jellyfin (and the providers).
     token_file = config / "tmdb-token"
@@ -409,7 +410,16 @@ def main() -> None:
         pick(cfg["streaming_apps"]),
         cfg["streaming_region"],
     )
-    routers.append(streaming_router(streaming, tv.open_app if tv else None))
+    tv_host = settings.default_tv(cfg)
+
+    def from_tv(request) -> bool:
+        """The TV itself asked: Caddy on this machine passes on who did (X-Forwarded-For); nobody else may say."""
+        caller = request.client.host if request.client else ""
+        if caller in ("127.0.0.1", "::1"):
+            caller = (request.headers.get("x-forwarded-for") or caller).split(",")[-1].strip()
+        return bool(tv_host) and caller == tv_host.split(":")[0]
+
+    routers.append(streaming_router(streaming, tv.open_app if tv else None, from_tv))
 
     def watched() -> set[str]:
         try:
@@ -448,7 +458,7 @@ def main() -> None:
             catalogs, jf, kodi, media_root, resolver, data / "thumbs", open_app, watchlist=watchlist, play_app=play_app
         )
     )
-    start_provider_jobs(jobs, catalogs, jf, media_root, resolver, watchlist)
+    start_provider_jobs(jobs, catalogs, jf, media_root, resolver, watchlist, streaming)
     connectors = {"providers": lambda: listing(catalogs), "kodi": kodi is not None, "tv": tv is not None}
     names = [*cfg["hosts"], urlsplit(resolver).hostname or ""]  # the TV reaches this app by the resolver's name
     app = create_app(
@@ -491,7 +501,9 @@ def tv_try(fn):
     return run
 
 
-def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, resolver: str, watchlist) -> None:
+def start_provider_jobs(
+    jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, resolver: str, watchlist, streaming=None
+) -> None:
     """Hourly: new episodes of followed and listed shows (from the second hour), and each provider's own jobs when
     they are due (from the start), unless a job is paused on the jobs page."""
     app_jobs.define(jobs)
@@ -512,6 +524,16 @@ def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, re
 
     jobs.register(app_jobs.WHOLE_CATALOGUE, whole_catalogue)
 
+    def on_my_apps():
+        try:
+            app_jobs.on_my_apps(jobs, streaming, jf, media_root, resolver)
+        except (JellyfinError, StreamingError, OSError) as e:  # recorded as failed; tried again tomorrow
+            print("on my apps failed:", e)
+
+    if streaming is not None:
+        jobs.register(app_jobs.ON_MY_APPS, on_my_apps)
+    last_apps = [0.0]
+
     def hourly():
         first = True
         while True:
@@ -522,6 +544,13 @@ def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, re
                 new_episodes()
             if not first and not jobs.paused(app_jobs.WHOLE_CATALOGUE):
                 whole_catalogue()
+            if (
+                streaming is not None
+                and time.time() - last_apps[0] > 23 * 3600
+                and not jobs.paused(app_jobs.ON_MY_APPS)
+            ):
+                last_apps[0] = time.time()
+                on_my_apps()
             first = False
             time.sleep(3600)
 

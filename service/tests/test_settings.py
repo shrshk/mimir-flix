@@ -29,3 +29,11 @@ def test_save_merges_and_keeps_only_what_differs_from_the_defaults(tmp_path):
         "tv_host": "10.0.0.5",
         "kodi_url": "http://10.0.0.5:8080",
     }
+
+
+def test_a_settings_file_with_wholphins_home_rows_loads(tmp_path):
+    # A key the defaults do not know stops mimir-flix at start (a typo would otherwise be silently ignored).
+    rows = {"languages": ["Telugu", "Hindi"], "channels": ["Channel One"]}
+    (tmp_path / "settings.json").write_text(json.dumps({"wholphin_home": rows}))
+    assert settings.load(tmp_path)["wholphin_home"] == rows
+    assert settings.load(tmp_path / "none")["wholphin_home"] == {}

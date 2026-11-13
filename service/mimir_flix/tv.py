@@ -99,7 +99,13 @@ class Tv:
         """Opens a streaming app on the TV: at the title's own link when there is one (the app's https link, e.g.
         netflix.com/title/…), else at the app's search for the title when it takes Android's search intent, else at
         its home screen. The package comes from streaming.APPS and the link is checked to be the app's own; both are
-        shell-quoted all the same."""
+        shell-quoted all the same. package may list the app's packages, "|"-joined: the installed one opens."""
+        if "|" in package:
+            names = package.split("|")
+            out = self.shell(
+                "; ".join(f"pm path {shlex.quote(p)} >/dev/null 2>&1 && echo {shlex.quote(p)}" for p in names)
+            )
+            package = (out.split() or names)[0]
         launch = f"monkey -p {package} -c android.intent.category.LEANBACK_LAUNCHER 1"
         search = f"am start -a android.intent.action.SEARCH -p {package} --es query {shlex.quote(title)}"
         view = f"am start -a android.intent.action.VIEW -d {shlex.quote(url)} -p {package}"
