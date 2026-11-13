@@ -767,3 +767,19 @@ def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins
     before = len(images)
     again = mirror.mirror(cat, "tv1", shows_root, movies_root, air, http=http)
     assert again["details"] == 0 and again["posters"] == 0 and images[before:] == ["http://p.example/x.html"]
+
+
+def test_a_film_in_several_languages_says_which_in_its_name_and_tags_combine_language_and_kind():
+    listed = [
+        {"kind": "movie", "title": "Jailer 2 (2026)", "language": "Telugu", "genres": ["Indian movies"]},
+        {"kind": "movie", "title": "Jailer 2 (2026)", "language": "Tamil", "genres": ["Indian movies"]},
+        {"kind": "movie", "title": "Heat (1995)", "language": "English", "genres": ["4K"]},
+        {"kind": "show", "title": "Jailer 2", "language": "Hindi", "genres": ["TV serial"]},  # a show: its own kind
+    ]
+    several = mirror.in_several_languages(listed)
+    assert several == {("movie", "jailer 2")}
+    telugu = mirror.nfo("movie", listed[0], ("movie", "jailer 2") in several)
+    assert "<title>Jailer 2 · Telugu</title>" in telugu and "<year>2026</year>" in telugu
+    assert "<tag>Telugu · Indian movies</tag>" in telugu
+    heat = mirror.nfo("movie", listed[2], False)
+    assert "<title>Heat</title>" in heat and "<tag>English · 4K</tag>" in heat

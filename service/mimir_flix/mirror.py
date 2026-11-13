@@ -117,6 +117,7 @@ def mirror(
         save(shows_root, shows)  # after each show, so a stop part-way loses nothing
 
     names = {u: r["name"] for u, r in shows.items()} | by_hand
+    dubbed = in_several_languages(listed)
     budget = [POSTERS_PER_RUN]
     own = http is None  # a client passed in stays open for its owner
     client = http or httpx.Client(timeout=20, follow_redirects=True)
@@ -128,7 +129,8 @@ def mirror(
                 folder, tag = shows_root / names[x["url"]], "tvshow"
             else:
                 continue
-            changed, fetched = write_details(folder, tag, x, cat, client, budget)
+            several = (x["kind"], base_title(x["title"])[0].lower()) in dubbed
+            changed, fetched = write_details(folder, tag, x, cat, client, budget, several)
             out["details"] += changed
             out["posters"] += fetched
     finally:
@@ -137,12 +139,30 @@ def mirror(
     return out
 
 
-def nfo(tag: str, item: dict) -> str:
+def base_title(title: str) -> tuple[str, str | None]:
+    """A title without its "(year)", and the year."""
+    m = YEAR.match(title)
+    return (m.group(1), m.group(2)) if m else (title, None)
+
+
+def in_several_languages(listed: list[dict]) -> set[tuple[str, str]]:
+    """(kind, title in lower case) of titles the catalogue has in more than one language (a film and its dubs):
+    their names in Jellyfin carry the language, so search results tell them apart."""
+    seen: dict[tuple[str, str], set[str]] = {}
+    for x in listed:
+        if x.get("language"):
+            seen.setdefault((x["kind"], base_title(x["title"])[0].lower()), set()).add(x["language"])
+    return {k for k, langs in seen.items() if len(langs) > 1}
+
+
+def nfo(tag: str, item: dict, with_language: bool = False) -> str:
     """Jellyfin's metadata file for a movie or a show from what the catalogue says: its language and kind as
-    genres (and tags), a TV channel as studio. Online metadata still fills what this leaves out."""
-    title, year = item["title"], None
-    if m := YEAR.match(title):
-        title, year = m.group(1), m.group(2)
+    genres (and tags), each kind also as "<language> · <kind>" (one tag a home row can ask for), a TV channel as
+    studio. with_language: the name carries the language ("Jailer 2 · Telugu"). Online metadata still fills what
+    this leaves out."""
+    title, year = base_title(item["title"])
+    if with_language and item.get("language"):
+        title = f"{title} · {item['language']}"
     lines = [f"  <title>{escape(title)}</title>"]
     if year:
         lines.append(f"  <year>{year}</year>")
@@ -151,6 +171,8 @@ def nfo(tag: str, item: dict) -> str:
     for g in [item.get("language"), *item.get("genres", [])]:
         if g:
             lines += [f"  <genre>{escape(g)}</genre>", f"  <tag>{escape(g)}</tag>"]
+    for g in item.get("genres", []) if item.get("language") else []:
+        lines.append(f"  <tag>{escape(item['language'])} · {escape(g)}</tag>")
     if item.get("studio"):
         lines.append(f"  <studio>{escape(item['studio'])}</studio>")
     body = "\n".join(lines)
@@ -158,14 +180,14 @@ def nfo(tag: str, item: dict) -> str:
 
 
 def write_details(
-    folder: Path, tag: str, item: dict, cat: Catalog, http: httpx.Client, budget: list[int]
+    folder: Path, tag: str, item: dict, cat: Catalog, http: httpx.Client, budget: list[int], with_language: bool = False
 ) -> tuple[bool, bool]:
     """The title's .nfo (rewritten only when it changes, as Jellyfin reads a changed file again) and, while the
     run's poster budget lasts, its poster from the catalogue (http or https, an image, at most POSTER_MAX bytes).
     Returns (nfo changed, poster fetched)."""
     if not folder.is_dir():
         return False, False
-    f, text = folder / f"{tag}.nfo", nfo(tag, item)
+    f, text = folder / f"{tag}.nfo", nfo(tag, item, with_language)
     changed = not f.exists() or f.read_text() != text
     if changed:
         f.write_text(text)

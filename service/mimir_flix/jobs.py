@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from jobkit import Jobs, page_html
 
-from mimir_flix import mirror
+from mimir_flix import mirror, settings, wholphin
 from mimir_flix.catalog import CatalogError, Catalogs, Job
 from mimir_flix.catalog_routes import libraries, roots
 from mimir_flix.jellyfin import Jellyfin
@@ -55,6 +55,7 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
     missing)."""
     with jobs.run(WHOLE_CATALOGUE) as run:
         notes = []
+        cfg = settings.load(catalogs.config)
         for entry, cat in catalogs.all():
             if not entry.get("mirror"):
                 continue
@@ -84,6 +85,8 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
                 )
                 + (f", {waiting} shows waiting" if waiting else "")
             )
+            if cfg.get("wholphin_home"):
+                notes.append("Wholphin home: " + wholphin.home(jf, names["shows"], names["movies"], cfg))
         run.summary = "; ".join(notes) or "no provider has the whole catalogue turned on"
         return run.summary
 
