@@ -258,6 +258,15 @@ def test_tv_plays_in_jellyfins_tv_app_not_the_phone(tmp_path, monkeypatch):
     assert sent == []  # not Kodi
 
 
+def test_tv_plays_in_wholphin_the_jellyfin_tv_app_in_use(tmp_path, monkeypatch):
+    wholphin = TV_APP | {"Id": "wholphin", "Client": "Wholphin"}
+    monkeypatch.setattr("tests.test_jf.SESSIONS", [PHONE_APP, wholphin])
+    monkeypatch.setattr("tests.test_jf.PLAYED", [])
+    _, c, _ = setup(tmp_path)
+    assert c.post("/api/jf/tv", json={"id": MOVIE}).json() == {"playing": "Wedding Film 4K"}
+    assert PLAYED == [("wholphin", {"playCommand": "PlayNow", "itemIds": MOVIE})]
+
+
 def test_tv_switches_from_what_it_is_playing_in_one_press(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.test_jf.SESSIONS", [TV_APP | {"NowPlayingItem": {"Id": CLIP}}])
     monkeypatch.setattr("tests.test_jf.PLAYED", [])

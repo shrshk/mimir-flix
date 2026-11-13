@@ -17,6 +17,7 @@ from adb_shell.exceptions import AdbConnectionError, AdbTimeoutError, DeviceAuth
 
 
 JELLYFIN_APP = "org.jellyfin.androidtv"
+WHOLPHIN = "com.github.damontecres.wholphin"  # a Jellyfin TV app; used instead of Jellyfin's own when installed
 
 
 NETFLIX = "com.netflix.ninja"
@@ -54,8 +55,10 @@ class Tv:
             dev.close()
 
     def open_jellyfin(self) -> None:
+        launch = "monkey -p {} -c android.intent.category.LEANBACK_LAUNCHER 1"
         self.shell(
-            f"input keyevent KEYCODE_WAKEUP; monkey -p {JELLYFIN_APP} -c android.intent.category.LEANBACK_LAUNCHER 1"
+            f"input keyevent KEYCODE_WAKEUP; if pm path {WHOLPHIN} >/dev/null 2>&1;"
+            f" then {launch.format(WHOLPHIN)}; else {launch.format(JELLYFIN_APP)}; fi"
         )
 
     def open_overlay(self) -> None:

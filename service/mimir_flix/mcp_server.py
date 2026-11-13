@@ -27,6 +27,7 @@ DESC = 200  # characters of each description: enough to recommend from
 # What the TV shows, by package: the streaming apps and the rest of the house's TV apps.
 TV_APPS = {a.package: a.name for a in APPS} | {
     "org.jellyfin.androidtv": "Jellyfin",
+    "com.github.damontecres.wholphin": "Wholphin (Jellyfin)",
     "org.xbmc.kodi": "Kodi",
     "com.gathin.tvhome": "TV Home",
     "dev.mimirflix.tv": "mimir-flix",
@@ -429,7 +430,7 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
         except TvError as e:
             raise ToolError(str(e)) from e
         out = now | {"app_name": TV_APPS.get(now["app"], now["app"])}
-        if now["app"] == "org.jellyfin.androidtv":  # Jellyfin knows what its TV app is playing
+        if now["app"] in ("org.jellyfin.androidtv", "com.github.damontecres.wholphin"):  # Jellyfin knows what plays
             try:
                 playing = await call(app, "GET", "/api/jf/now")
             except ToolError:

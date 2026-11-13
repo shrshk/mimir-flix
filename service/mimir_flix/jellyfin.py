@@ -324,12 +324,12 @@ class Jellyfin:
         return {"server": info.get("Id", ""), "user": self.user()}
 
     def tv_session(self) -> dict | None:
-        """The Jellyfin TV app, when it is open and can take a play command."""
+        """The Jellyfin TV app (Wholphin or Jellyfin's own), when it is open and can take a play command."""
         params = {"ControllableByUserId": self.user(), "ActiveWithinSeconds": "960"}
         tvs = [
             x
             for x in self._call("GET", "/Sessions", params) or []
-            if "TV" in (x.get("Client") or "")
+            if ("TV" in (x.get("Client") or "") or x.get("Client") == "Wholphin")
             and x.get("SupportsRemoteControl")
             and "Video" in (x.get("PlayableMediaTypes") or [])
         ]
