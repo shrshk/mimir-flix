@@ -70,7 +70,7 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
         "wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": ["channel one", "Nowhere"]},
         "streaming_apps": "netflix,peacock",  # Peacock has nothing in On my apps: no row
     }
-    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "10 rows written"
+    assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "9 rows written"
 
     saved = json.loads(fake.prefs["CustomPrefs"]["home_settings"])
     assert saved["version"] == 1 and fake.prefs["CustomPrefs"]["other"] == "kept" and fake.prefs["SortBy"] == "SortName"
@@ -90,7 +90,6 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
         "English shows",
         "English movies",
         "Channel One",
-        "RecentlyAdded",
     ]
     serials = saved["rows"][3]["filter"]
     assert serials["tags"] == ["Telugu · TV serial"] and serials["parentId"] == SHOWS

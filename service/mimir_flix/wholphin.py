@@ -74,7 +74,8 @@ def rows(
         studio = next((s for s in found if s["Name"].lower() == name.lower()), None)
         if studio:
             out.append(query(studio["Name"], shows_lib, "Series", studioIds=[studio["Id"]]))
-    out.append({"type": "RecentlyAdded", "parentId": shows_lib})
+    # No "Recently added": the whole catalogue adds shows nobody here watches; new episodes of the house's own
+    # shows come up in the first row (Next up).
     return out
 
 
