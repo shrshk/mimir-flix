@@ -56,6 +56,8 @@ STEPS = [
     {"key": "jellyfin", "name": "Jellyfin", "optional": False},
     {"key": "media", "name": "Your media", "optional": True},
     {"key": "streaming", "name": "Your streaming apps", "optional": True},
+    # Added after the first Macs were set up: it never reopens a Mac whose other steps are all there.
+    {"key": "languages", "name": "Your languages", "optional": True, "later": True},
     {"key": "tv", "name": "The TV", "optional": True},
     {"key": "phones", "name": "Phones", "optional": True},
     {"key": "backup", "name": "Backups", "optional": True},
@@ -71,6 +73,10 @@ class OffsiteKey(BaseModel):
 
 class Offsite(BaseModel):
     on: bool
+
+
+class LanguagesStep(BaseModel):
+    languages: str = Field(max_length=500)  # names in order, a comma between
 
 
 class BackupStep(BaseModel):
@@ -200,6 +206,8 @@ def router(
                 return False
         if step == "streaming":
             return (config / "tmdb-token").exists()
+        if step == "languages":
+            return bool(cfg["library_languages"])
         if step == "tv":
             return bool(cfg["tvs"])
         if step == "phones":
@@ -217,6 +225,7 @@ def router(
             "resolver": cfg["resolver"]
             or f"http://{lan_address() or socket.gethostname().removesuffix('.local') + '.local'}:{cfg['resolver_port']}",
             "backup_dir": cfg["backup_dir"],
+            "languages": ", ".join(cfg["library_languages"]),
             "offsite": offsite_status(cfg),
             "tailnet": tailnet_status(cfg),
             "tv_url": tv_url(cfg),  # the Mac's shared off-site storage (no secrets), and whether it is on
@@ -231,7 +240,10 @@ def router(
         cfg = settings.load(config)
         return {
             "steps": steps,
-            "locked": saved.get("finished") == "done" or all(s["state"] != "todo" for s in steps),
+            # A Mac set up without the wizard (nothing saved by it) is locked once its steps are there, a later
+            # step aside; going through the wizard, every step counts.
+            "locked": saved.get("finished") == "done"
+            or all(s["state"] != "todo" for s in steps if saved or not s.get("later")),
             "defaults": defaults(cfg),
             "pairing": pairing.get(settings.default_tv(cfg), {}),
         }
@@ -366,6 +378,18 @@ def router(
         open_only()
         save_streaming(body)
         progress.mark("streaming", "done")
+        return {}
+
+    @change.post("/api/setup/languages")
+    def languages_step(body: LanguagesStep):
+        """The house's languages, in order: what goes into Jellyfin and how Wholphin lays it out (the rest of it is
+        on the Settings page, Into Jellyfin)."""
+        open_only()
+        names = [n.strip() for n in body.languages.split(",") if n.strip()]
+        if not names:
+            raise HTTPException(422, "Type at least one language, or skip this step")
+        settings.save({"library_languages": list(dict.fromkeys(names))}, config)
+        progress.mark("languages", "done")
         return {}
 
     @change.post("/api/setup/tv")

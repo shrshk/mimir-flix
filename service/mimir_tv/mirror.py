@@ -16,7 +16,7 @@ Jellyfin apps can list titles by language or channel even where online metadata 
 
 What was written is kept in .mirrored.json in each root ({link: {"name", "at"}}).
 
-A house can keep it to some languages and the newest few titles of each category (settings mirror_languages and
+A house can keep it to some languages and the newest few titles of each category (settings library_languages and
 mirror_per_category; wanted): a title outside them is not written, and one written before goes to the Trash (prune),
 unless it was added by hand or someone watched, is watching or favourited it. Anything else is a search away in
 mimir-tv, which adds it to Jellyfin."""
@@ -93,6 +93,7 @@ def mirror(
     http: httpx.Client | None = None,
     languages: list[str] | None = None,
     per_category: int = 0,
+    episodes: int = EPISODES_KEPT,
 ) -> dict[str, int]:
     """One run: every wanted movie not written yet, then up to per_run wanted shows, then details for every written
     title (a batch of posters a run). Returns counts of what was written."""
@@ -143,7 +144,7 @@ def mirror(
         taken[name.lower()] = s["url"]
         shows[s["url"]] = {"name": name, "at": now}
         out["shows"] += 1
-        out["episodes"] += len(files) - trim(shows_root / safe(name), EPISODES_KEPT)
+        out["episodes"] += len(files) - trim(shows_root / safe(name), episodes)
         save(shows_root, shows)  # after each show, so a stop part-way loses nothing
 
     names = {u: r["name"] for u, r in shows.items()} | by_hand
@@ -301,10 +302,11 @@ def names_in(root: Path, paths: list[str]) -> set[str]:
     return out
 
 
-def prune(root: Path, keep: set[str], protected: set[str], trash: Path) -> int:
+def prune(root: Path, keep: set[str], protected: set[str], trash: Path, dry: bool = False) -> int:
     """Moves mirrored titles not in keep (links) to trash, and forgets them; a title added by hand (followed or
     added) or protected (folder names in lower case: watched, in progress or favourited) stays. Returns how many
-    moved. Only mirror.py's own titles are touched, and nothing at all when keep is empty (no list to go by)."""
+    moved (dry: how many would, moving nothing). Only mirror.py's own titles are touched, and nothing at all when
+    keep is empty (no list to go by)."""
     if not keep:
         return 0
     done = mirrored(root)
@@ -314,6 +316,9 @@ def prune(root: Path, keep: set[str], protected: set[str], trash: Path) -> int:
         name = rec["name"]
         if url in keep or name.lower() in protected or name.lower() in by_hand:
             continue
+        gone += 1
+        if dry:
+            continue
         src = root / name
         if src.is_dir():
             dest, n = trash / name, 2
@@ -321,7 +326,6 @@ def prune(root: Path, keep: set[str], protected: set[str], trash: Path) -> int:
                 dest, n = trash / f"{name} {n}", n + 1
             shutil.move(src, dest)
         del done[url]
-        gone += 1
-    if gone:
+    if gone and not dry:
         save(root, done)
     return gone

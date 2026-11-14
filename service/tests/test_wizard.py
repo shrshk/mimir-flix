@@ -107,6 +107,9 @@ def test_a_new_mac_goes_through_every_step_and_the_wizard_locks_at_finish(tmp_pa
     (tmp_path / "backups").mkdir()
     assert c.post("/api/setup/backup", json={"dir": str(tmp_path / "backups")}).status_code == 200
 
+    assert c.post("/api/setup/finish").status_code == 409  # languages still to do (saved or skipped)
+    assert c.post("/api/setup/languages", json={"languages": " , "}).status_code == 422
+    assert c.post("/api/setup/languages", json={"languages": "Telugu, Hindi, Telugu, English"}).status_code == 200
     assert c.post("/api/setup/finish").json() == {"restarting": True} and restarts == [1, 1]
     status = c.get("/api/setup").json()
     assert status["locked"] is True and states(c)["phones"] == "skipped"
@@ -123,6 +126,7 @@ def test_a_new_mac_goes_through_every_step_and_the_wizard_locks_at_finish(tmp_pa
         "kodi_url": "http://192.0.2.25:8080",
         "kodi_password_file": "vault:kodi",
         "backup_dir": str(tmp_path / "backups"),
+        "library_languages": ["Telugu", "Hindi", "English"],  # in order, once each
     }
     # No password is in the settings or the wizard's database.
     stored = (config / "settings.json").read_text() + (tmp_path / "m.db").read_bytes().decode("latin-1")

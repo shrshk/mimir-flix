@@ -353,3 +353,26 @@ def test_on_my_apps_takes_each_apps_whole_catalogue_page_by_page_up_to_a_cap(tmp
     netflix = pick("netflix")[0]
     assert [t["title"] for t in s.on_app(netflix, 1, [8])] == ["M1"]
     assert not any(u.params.get("page") == "2" for u in calls)
+
+
+def test_on_my_apps_in_the_houses_languages_asks_tmdb_one_language_at_a_time_and_counts_for_a_preview(tmp_path):
+    asked = []
+
+    def handler(request):
+        p, q = request.url.path, request.url.params
+        if p.startswith("/3/watch/providers/"):
+            return httpx.Response(200, json={"results": [{"provider_id": 8, "provider_name": "Netflix"}]})
+        if p == "/3/trending/all/week":
+            return httpx.Response(200, json={"results": []})
+        lang = q.get("with_original_language", "")
+        asked.append((p.rsplit("/", 1)[1], lang))
+        made_in = {"te": [(1, "Telugu film", 30)], "hi": [(2, "Hindi film", 50)], "": [(3, "Any film", 90)]}
+        hits = [{"id": i, "title": t, "popularity": pop, "poster_path": f"/{i}.jpg"} for i, t, pop in made_in[lang]]
+        hits = hits if p.endswith("/movie") else []
+        return httpx.Response(200, json={"results": hits, "total_pages": 1, "total_results": len(hits) * 7})
+
+    s = Streaming("eyJtok", tmp_path / "m.db", pick("netflix"), transport=httpx.MockTransport(handler))
+    titles = s.catalog(per_app=10, languages=["te", "hi"])
+    assert [t["title"] for t in titles] == ["Hindi film", "Telugu film"]  # merged, most popular first
+    assert sorted(set(asked)) == [("movie", "hi"), ("movie", "te"), ("tv", "hi"), ("tv", "te")]
+    assert s.on_app_count([8], ["te", "hi"]) == 14 and s.on_app_count([8]) == 7

@@ -3,8 +3,8 @@ then rows per language and kind (TV serials, web series, movies), TV channels, a
 
 Wholphin (an Android TV app for Jellyfin) reads its home rows from the user's Jellyfin display preferences
 ("default", client "Wholphin", custom pref "home_settings", version 1) when the TV has none of its own; this writes
-them there. Settings ("wholphin_home" in settings.json): {"languages": ["Telugu", "Hindi", "English"],
-"channels": ["…"]}. Rows use the tags mirror.py writes into each title's .nfo: the language, and
+them there. Settings: library_languages (the rows' languages, in order) and wholphin_channels (a row per TV channel);
+wholphin_rows off leaves Wholphin's own home alone. Rows use the tags mirror.py writes into each title's .nfo: the language, and
 "<language> · <kind>"."""
 
 import json
@@ -94,14 +94,19 @@ def write(jf: Jellyfin, layout: list[dict]) -> bool:
 
 def home(jf: Jellyfin, shows_name: str, movies_name: str, cfg: dict) -> str:
     """Writes the home page when the settings ask for one; a line for the jobs page."""
-    want = cfg.get("wholphin_home") or {}
-    if not want.get("languages"):
-        return "no wholphin_home languages in Settings"
+    if not cfg.get("library_languages"):
+        return "no languages in Settings (Into Jellyfin)"
     libs = {x["Name"]: x.get("ItemId") for x in jf.libraries()}
     if not (libs.get(shows_name) and libs.get(movies_name)):
         return "the catalogue's libraries are not in Jellyfin yet"
     apps = [a.name for a in pick(cfg.get("streaming_apps", ""))]
     layout = rows(
-        jf, libs[shows_name], libs[movies_name], want["languages"], want.get("channels", []), libs.get(LIBRARY), apps
+        jf,
+        libs[shows_name],
+        libs[movies_name],
+        cfg["library_languages"],
+        cfg.get("wholphin_channels", []),
+        libs.get(LIBRARY),
+        apps,
     )
     return f"{len(layout)} rows" + (" written" if write(jf, layout) else ", unchanged")

@@ -54,6 +54,7 @@ from mimir_tv.vault import Vault
 from mimir_tv.watchlist import Watchlist
 from mimir_tv.watchlist import router as list_router
 from mimir_tv.wizard import allowed
+from mimir_tv.into import router as into_router
 from mimir_tv.wizard import router as wizard_router
 
 STATIC = Path(__file__).parent / "static"
@@ -445,6 +446,7 @@ def main() -> None:
     routers.append(prereqs_router(cfg["jellyfin_url"]))
     # Then setup itself on the same page, one step at a time; it locks once every step is done or skipped.
     routers.append(wizard_router(config, data / "mimir-tv.db", vault, catalogs=catalogs))
+    routers.append(into_router(config, catalogs, jf, media_root, streaming))
     # Providers (M2, O1): IPTV played by Jellyfin's Live TV from mimir-tv's local playlist, and plugin providers;
     # logins stay in the vault.
     iptv = Providers(
@@ -526,7 +528,7 @@ def start_provider_jobs(
 
     def on_my_apps():
         try:
-            app_jobs.on_my_apps(jobs, streaming, jf, media_root, resolver)
+            app_jobs.on_my_apps(jobs, streaming, jf, media_root, resolver, settings.load(catalogs.config))
         except (JellyfinError, StreamingError, OSError) as e:  # recorded as failed; tried again tomorrow
             print("on my apps failed:", e)
 

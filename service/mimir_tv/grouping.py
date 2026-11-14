@@ -3,7 +3,7 @@ one per kind ("Telugu TV serials", "Telugu web series", "Telugu movies"). Jellyf
 side menu (Wholphin: Collections), so the catalogue browses by language, then kind, in any of them.
 
 Membership comes from the tags mirror.py writes ("<language> · <kind>", and the language on movies); each run adds
-what is new and takes out what left. Languages and their order come from Settings' wholphin_home. Only
+what is new and takes out what left. Languages and their order come from Settings' library_languages. Only
 collections with these names are touched."""
 
 from mimir_tv.jellyfin import Jellyfin, JellyfinError

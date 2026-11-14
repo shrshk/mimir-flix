@@ -67,7 +67,8 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
     fake = FakeJellyfin()
     jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
     cfg = {
-        "wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": ["channel one", "Nowhere"]},
+        "library_languages": ["Telugu", "Hindi", "English"],
+        "wholphin_channels": ["channel one", "Nowhere"],
         "streaming_apps": "netflix,peacock",  # Peacock has nothing in On my apps: no row
     }
     assert wholphin.home(jf, "My TV", "My TV Movies", cfg) == "9 rows written"
@@ -100,4 +101,4 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
 
     # The same layout again is not written again.
     assert wholphin.home(jf, "My TV", "My TV Movies", cfg).endswith("unchanged") and fake.posts == 1
-    assert wholphin.home(jf, "My TV", "My TV Movies", {}) == "no wholphin_home languages in Settings"
+    assert wholphin.home(jf, "My TV", "My TV Movies", {}) == "no languages in Settings (Into Jellyfin)"

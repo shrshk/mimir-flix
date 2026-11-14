@@ -23,7 +23,7 @@
   details { margin-top:8px; } summary { cursor:pointer; color:var(--mute); font-size:14px; }
   form { display:grid; gap:10px; margin-top:10px; }
   label { display:grid; gap:4px; font-size:13px; color:var(--mute); }
-  input[type=text], input[type=password], input[type=url], select { font:inherit; color:var(--ink); background:#0d0d0d;
+  input[type=text], input[type=password], input[type=url], input[type=number], select { font:inherit; color:var(--ink); background:#0d0d0d;
          border:1px solid var(--line); border-radius:8px; padding:9px 10px; width:100%; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .tv { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; border-top:1px solid var(--line); padding-top:10px; }
@@ -69,6 +69,7 @@ const CARDS = [
     <div class="mute">Your apps (none ticked: every app counts)</div>
     <div class="checks">${c.all_apps.map(a => `<label class="row"><input type="checkbox" name="app" value="${a.key}" ${c.apps.split(",").map(x => x.trim()).includes(a.key) ? "checked" : ""}> ${esc(a.name)}</label>`).join("")}</div>
     <label>Country (two letters)<input type="text" name="region" maxlength="2" value="${esc(c.region)}"></label>`},
+  {key: "into", title: "Into Jellyfin", form: () => intoForm()},
   {key: "recs", title: "Recommendations", form: c => `
     <p class="mute">Applies at once, on the page and for an assistant. Leave everything unticked for no rules.</p>
     <div class="mute">Never recommend these genres</div>
@@ -169,6 +170,14 @@ function lines(key) {
     return `<div class="line ${cfg.backup_dir ? (last ? "ok" : "opt") : "opt"}"><span class="mark">${cfg.backup_dir && last ? "✓" : "–"}</span><span>${cfg.backup_dir ? (last ? `Last: ${esc(last.name)}` : "No backup yet") : "Off"}</span></div>`
       + `<div class="line ${o.on ? "ok" : "opt"}"><span class="mark">${o.on ? "✓" : "–"}</span><span>Off-site: ${o.on ? `on, encrypted (runs on the <a href="jobs">Jobs page</a>)` : "off"}</span></div>`;
   }
+  if (key === "into") {
+    if (!into) return "";
+    const l = into.languages.length ? into.languages.map(esc).join(", ") : "Every language";
+    const whole = into.providers.some(p => p.mirror) ? (into.per_category ? `newest ${into.per_category} per category` : "all of it") : "off";
+    const apps = into.onapps ? `${into.onapps_per_app} per app${into.onapps_languages && into.languages.length ? ", your languages" : ""}` : "off";
+    return `<div class="line opt"><span class="mark">–</span><span>${l}</span></div>`
+      + `<div class="line opt"><span class="mark">–</span><span>Whole catalogue: ${whole} · On my apps: ${apps}</span></div>`;
+  }
   if (key === "recs") {
     const n = cfg.recs_avoid_genres.length, l = cfg.recs_languages.length;
     return `<div class="line opt"><span class="mark">–</span><span>${n || l ? `${n ? `Avoiding ${cfg.recs_avoid_genres.map(esc).join(", ")}` : ""}${n && l ? "; " : ""}${l ? `only ${cfg.recs_languages.map(k => recsOpts?.languages?.[k] || k).join(", ")}` : ""}` : "No rules"}</span></div>`;
@@ -258,17 +267,34 @@ function bind() {
       if (card === "phones") body = {resolver: data.resolver, direct: !!data.direct};
       if (card === "streaming") body = {token: data.token, region: data.region,
         apps: [...f.querySelectorAll("[name=app]:checked")].map(x => x.value).join(",")};
+      if (card === "into") body = intoBody(f);
       if (card === "recs") body = {avoid_genres: [...f.querySelectorAll("[name=avoid]:checked")].map(x => x.value),
         languages: [...f.querySelectorAll("[name=lang]:checked")].map(x => x.value)};
       if (card === "tvs") body = {
         tvs: [...f.querySelectorAll(".tv")].map(r => ({name: r.querySelector("[name=tvname]").value.trim() || "TV",
           host: r.querySelector("[name=tvhost]").value.trim(), kind: r.querySelector("[name=tvkind]").value})).filter(t => t.host),
         kodi_url: data.kodi_url, kodi_password: data.kodi_password};
-      if (await send("PUT", `api/settings/${card}`, body, msg)) { msg.className = "msg ok"; msg.textContent = "Saved."; await load(); }
+      const out = await send("PUT", `api/settings/${card}`, body, msg);
+      if (out) {
+        msg.className = "msg ok";
+        msg.textContent = card === "into" ? `Saved: the jobs apply it (whole catalogue within the hour, On my apps tomorrow, or Run now).${out.live_tuners_changed ? " Live TV asks for your languages now." : ""}` : "Saved.";
+        await load();
+      }
     };
     f.querySelector("[data-off]")?.addEventListener("click", async () => {
       if (await send("DELETE", `api/settings/${card}`, null, msg)) load();
     });
+  });
+  document.querySelectorAll("[data-addlang]").forEach(b => b.onclick = () => {
+    const box = b.closest("form").querySelector("[name=languages]");
+    const have = box.value.split(",").map(x => x.trim()).filter(Boolean);
+    if (!have.includes(b.dataset.addlang)) box.value = [...have, b.dataset.addlang].join(", ");
+  });
+  $("#intopreview")?.addEventListener("click", async e => {
+    const f = e.target.closest("form"), out = $("#intoout");
+    out.innerHTML = `<p class="mute">Counting…</p>`;
+    const p = await send("POST", "api/settings/into/preview", intoBody(f), f.querySelector("[data-msg]"));
+    out.innerHTML = p ? intoPreview(p) : "";
   });
   // A plugin's extra lines (e.g. the address and login it serves other players): copied with one tap.
   document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
@@ -347,6 +373,52 @@ async function loadChecks() {
 // The address a TV on the home network reaches: this page's own unless it is a tailnet name (the TV has no Tailscale),
 // then the address players use (the resolver address in Phones).
 const tvBase = () => (cfg.tv_url || location.origin).replace(/\/+$/, "");  // the TV has no Tailscale: its own address
+let into = null;  // what goes into Jellyfin (into.py), with the languages the catalogue offers
+// Into Jellyfin: one card for what mimir-tv puts in Jellyfin. Saved here; the jobs apply it (Preview says what they
+// would do first: what goes in, and what goes to the Trash).
+function intoForm() {
+  const i = into;
+  if (!i) return `<p class="mute">Could not read it: reload to try again.</p>`;
+  const on = b => b ? "checked" : "";
+  const cats = i.providers.filter(p => p.can);
+  return `<p class="mute">What mimir-tv puts in Jellyfin, for Wholphin on the TV and every other Jellyfin app.
+      Preview first: it says what goes in, and what goes to the Trash. Titles someone watched, favourited or added by
+      hand always stay. The jobs apply it: the whole catalogue every hour, On my apps every day (or Run now on the
+      <a href="jobs">Jobs page</a>). Anything left out is still a search away in mimir-tv, which adds it.</p>
+    <label>Your languages, in order (a comma between; empty: every language)<input type="text" name="languages" value="${esc(i.languages.join(", "))}" autocomplete="off"></label>
+    ${i.offered.length ? `<div class="row">${i.offered.slice(0, 16).map(n => `<button type="button" class="ghost" data-addlang="${esc(n)}">+ ${esc(n)}</button>`).join("")}</div>` : ""}
+    <div class="mute">The whole catalogue</div>
+    ${cats.length ? `<div class="checks">${cats.map(p => `<label class="row"><input type="checkbox" name="mirror" value="${esc(p.id)}" ${on(p.mirror)}> ${esc(p.name)}</label>`).join("")}</div>
+    <label>Newest titles of each category (0: all)<input type="number" name="per_category" min="0" value="${i.per_category}"></label>
+    <label>Latest episodes of each show<input type="number" name="episodes" min="1" value="${i.episodes}"></label>` : `<p class="mute">No provider here lists a whole catalogue.</p>`}
+    <div class="mute">On my apps (your streaming apps' popular titles, from TMDB)</div>
+    ${i.tmdb ? "" : `<p class="mute">Needs the TMDB token (Your streaming apps).</p>`}
+    <label class="row"><input type="checkbox" name="onapps" ${on(i.onapps)}> Put them in Jellyfin</label>
+    <label>Titles per app<input type="number" name="onapps_per_app" min="1" value="${i.onapps_per_app}"></label>
+    <label class="row"><input type="checkbox" name="onapps_languages" ${on(i.onapps_languages)}> Only titles first made in your languages</label>
+    <div class="mute">Wholphin on the TV</div>
+    <label class="row"><input type="checkbox" name="wholphin_rows" ${on(i.wholphin_rows)}> Lay out its home: your apps, then rows by language and kind</label>
+    <label>TV channel rows (a comma between)<input type="text" name="wholphin_channels" value="${esc(i.wholphin_channels.join(", "))}" autocomplete="off"></label>
+    <div class="row"><button type="button" class="ghost" id="intopreview">Preview</button></div>
+    <div id="intoout"></div>`;
+}
+function intoBody(f) {
+  const list = n => (f.querySelector(`[name=${n}]`)?.value || "").split(",").map(x => x.trim()).filter(Boolean);
+  const num = (n, d) => { const v = parseInt(f.querySelector(`[name=${n}]`)?.value, 10); return Number.isFinite(v) ? v : d; };
+  const ticked = n => !!f.querySelector(`[name=${n}]`)?.checked;
+  return {languages: list("languages"),
+    mirror: Object.fromEntries([...f.querySelectorAll("[name=mirror]")].map(x => [x.value, x.checked])),
+    per_category: num("per_category", into.per_category), episodes: num("episodes", into.episodes),
+    onapps: ticked("onapps"), onapps_per_app: num("onapps_per_app", into.onapps_per_app), onapps_languages: ticked("onapps_languages"),
+    wholphin_rows: ticked("wholphin_rows"), wholphin_channels: list("wholphin_channels")};
+}
+function intoPreview(p) {
+  const n = x => Number(x).toLocaleString();
+  const part = (k, x) => `${n(x.wanted)} ${k}${x.now ? ` (now ${n(x.now)}${x.to_trash ? `; <b>${n(x.to_trash)} to the Trash</b>` : ""})` : ""}`;
+  const rows = p.catalogue.map(c => `<div class="line opt"><span class="mark">–</span><span>${esc(c.provider)}: ${part("movies", c.movies)}, ${part("shows", c.shows)}</span></div>`);
+  if (p.apps) rows.push(`<div class="line opt"><span class="mark">–</span><span>On my apps: ${p.apps.about == null ? "TMDB did not answer" : `about ${n(p.apps.about)} titles`} (now ${n(p.apps.now)}; titles left out go after two weeks)</span></div>`);
+  return rows.join("") || `<p class="mute">Nothing goes into Jellyfin with these choices.</p>`;
+}
 let recsOpts = null;  // genres and languages to choose from (TMDB's own genre list)
 let providers = [], kinds = [];  // the providers set up, and the installed plugins' kinds
 async function loadProviders() {
@@ -356,6 +428,7 @@ async function loadProviders() {
 async function load() {
   if (!recsOpts) recsOpts = await fetch("api/recs/options").then(r => r.ok ? r.json() : null).catch(() => null);
   await loadProviders();
+  into = await fetch("api/settings/into").then(r => r.ok ? r.json() : null).catch(() => null);
   // Never stuck on "Checking…": a settings call that fails or takes too long says so.
   try {
     const r = await fetch("api/settings", {signal: AbortSignal.timeout(20000)});

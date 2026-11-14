@@ -33,14 +33,23 @@ DEFAULTS = {
     # pays for.
     "streaming_apps": "",  # e.g. "netflix,prime,peacock" (keys in streaming.APPS); empty: every app
     "streaming_region": "US",  # the country whose catalogues count
-    # Wholphin's home rows (wholphin.py), written to the user's Jellyfin profile: {"languages": ["Telugu", "Hindi"],
-    # "channels": ["…"]} (TV channels as studios); empty: Wholphin's own home is left alone.
-    "wholphin_home": {},
-    # The whole catalogue in Jellyfin (a provider's "mirror": true), kept to these languages as the catalogue names
-    # them (e.g. ["Telugu", "Hindi"]; empty: every language) and the newest N titles of each category (0: all).
-    # Titles outside go to the Trash, unless added by hand, watched or favourited (mirror.py).
-    "mirror_languages": [],
+    # What goes into Jellyfin (Settings > Into Jellyfin). library_languages: the house's languages as the catalogue
+    # names them, in order (e.g. ["Telugu", "Hindi", "English"]; empty: every language). They keep the whole
+    # catalogue (a provider's "mirror": true) to those languages, order Wholphin's home rows and the collections, pick
+    # Live TV's channel groups, and with onapps_languages keep On my apps to titles first made in them.
+    "library_languages": [],
+    # The whole catalogue: the newest N titles of each category (0: all), and each show's latest episodes. Titles
+    # outside go to the Trash, unless added by hand, watched or favourited (mirror.py).
     "mirror_per_category": 0,
+    "mirror_episodes": 10,
+    # On my apps (onapps.py): on or off, each app's most popular titles, and only those in library_languages.
+    "onapps": True,
+    "onapps_per_app": 3000,
+    "onapps_languages": True,
+    # Wholphin's home rows (wholphin.py), written to the user's Jellyfin profile when library_languages is set, with
+    # a row per TV channel named here (studios).
+    "wholphin_rows": True,
+    "wholphin_channels": [],
     # Recommendations everywhere (the page and an assistant) leave these out: genre names, and keep only these
     # original languages (codes like te, hi, en; empty: every language).
     # Providers (Settings adds them): [{"id", "name", "kind", …}]. kind is m3u or xtream (IPTV, with "server"?,
@@ -71,17 +80,33 @@ def tv_apk_path() -> Path:
     return data / "tv" / "mimir-tv.apk"
 
 
+def upgrade(found: dict) -> dict:
+    """Older settings in today's names: mirror_languages and wholphin_home's languages became library_languages,
+    wholphin_home's channels wholphin_channels (an empty wholphin_home: Wholphin's rows off)."""
+    found = dict(found)
+    langs = found.pop("mirror_languages", None)
+    home = found.pop("wholphin_home", None)
+    if home is not None:
+        found.setdefault("wholphin_rows", bool(home))
+        found.setdefault("wholphin_channels", home.get("channels", []))
+    if "library_languages" not in found and (langs or (home or {}).get("languages")):
+        found["library_languages"] = langs or home["languages"]
+    return found
+
+
 def load(config: Path | None = None) -> dict:
     config = config or config_dir()
     path = config / "settings.json"
-    found = json.loads(path.read_text()) if path.exists() else {}
+    found = upgrade(json.loads(path.read_text()) if path.exists() else {})
     unknown = set(found) - set(DEFAULTS)
     if unknown:
         raise SystemExit(f"{path}: unknown settings {sorted(unknown)} (see settings.example.json)")
     out = DEFAULTS | found
     for name, default in DEFAULTS.items():
         env = os.environ.get(f"MIMIR_TV_{name.upper()}")
-        if env is not None and not isinstance(default, (list, dict)):
+        if env is not None and isinstance(default, bool):
+            out[name] = env.strip().lower() in ("1", "true", "yes", "on")
+        elif env is not None and not isinstance(default, (list, dict)):
             out[name] = type(default)(env)
     if not out["tvs"] and out["tv_host"]:
         out["tvs"] = [{"name": "TV", "host": out["tv_host"], "kind": "android"}]
@@ -106,7 +131,7 @@ def save(changes: dict, config: Path | None = None) -> Path:
     config = config or config_dir()
     config.mkdir(parents=True, exist_ok=True)
     path = config / "settings.json"
-    current = json.loads(path.read_text()) if path.exists() else {}
+    current = upgrade(json.loads(path.read_text()) if path.exists() else {})
     merged = {k: v for k, v in (current | changes).items() if DEFAULTS.get(k) != v}
     path.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n")
     return path

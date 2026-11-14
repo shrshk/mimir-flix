@@ -97,6 +97,10 @@ const FORMS = {
     <label>TMDB token (empty keeps the saved one)<input type="password" name="token" autocomplete="off"></label>
     <label>Your apps, comma-separated (netflix, prime, peacock …; empty counts every app)<input type="text" name="apps" value="${esc(d.apps)}"></label>
     <label>Country (two letters)<input type="text" name="region" maxlength="2" value="${esc(d.region)}"></label>`,
+  languages: d => `<p class="mute">Optional. The languages your house watches, in order: what goes into Jellyfin
+    from your providers and apps, and how Wholphin on the TV lays it out (your apps, then each language). How many
+    titles, and the rest, is on the Settings page (Into Jellyfin).</p>
+    <label>Languages, a comma between (e.g. Telugu, Hindi, English)<input type="text" name="languages" value="${esc(d.languages)}" autocomplete="off"></label>`,
   tv: d => `<p class="mute">Optional. 📺 TV starts videos and apps on the TV. After saving, Pair and accept the prompt
     on the TV. More TVs can be added on the Settings page.</p>
     <label>TV IP address<input type="text" name="host" value="${esc(d.tv_host)}"></label>

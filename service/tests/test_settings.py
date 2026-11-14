@@ -31,9 +31,20 @@ def test_save_merges_and_keeps_only_what_differs_from_the_defaults(tmp_path):
     }
 
 
-def test_a_settings_file_with_wholphins_home_rows_loads(tmp_path):
-    # A key the defaults do not know stops mimir-tv at start (a typo would otherwise be silently ignored).
+def test_older_language_settings_load_under_todays_names_and_leave_the_file_on_the_next_save(tmp_path):
+    # A key the defaults do not know stops mimir-tv at start, so older names are read as today's.
     rows = {"languages": ["Telugu", "Hindi"], "channels": ["Channel One"]}
-    (tmp_path / "settings.json").write_text(json.dumps({"wholphin_home": rows}))
-    assert settings.load(tmp_path)["wholphin_home"] == rows
-    assert settings.load(tmp_path / "none")["wholphin_home"] == {}
+    (tmp_path / "settings.json").write_text(json.dumps({"wholphin_home": rows, "mirror_per_category": 50}))
+    cfg = settings.load(tmp_path)
+    assert (cfg["library_languages"], cfg["wholphin_channels"], cfg["wholphin_rows"]) == (
+        ["Telugu", "Hindi"],
+        ["Channel One"],
+        True,
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"mirror_languages": ["Hindi"], "wholphin_home": {}}))
+    cfg = settings.load(tmp_path)
+    assert (cfg["library_languages"], cfg["wholphin_rows"]) == (["Hindi"], False)
+    settings.save({"mirror_episodes": 5}, tmp_path)
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert saved == {"library_languages": ["Hindi"], "wholphin_rows": False, "mirror_episodes": 5}
+    assert settings.load(tmp_path / "none")["library_languages"] == []

@@ -283,42 +283,60 @@ class Streaming:
                 out.append({"app": app.key, "name": app.name, "items": items})
         return out
 
-    def on_app(self, app: App, cap: int, ids: list[int], min_votes: int = FULL_MIN_VOTES) -> list[dict]:
+    def _discover(self, kind: str, ids: list[int], page: int, min_votes: int, language: str = "") -> dict:
+        extra = {"with_original_language": language} if language else {}
+        return self._get(
+            f"/discover/{kind}",
+            with_watch_providers="|".join(map(str, ids)),
+            watch_region=self.region,
+            with_watch_monetization_types="flatrate|free|ads",
+            sort_by="popularity.desc",
+            include_adult="false",
+            language="en-US",
+            page=str(page),
+            **{"vote_count.gte": str(min_votes)},
+            **extra,
+        )
+
+    def on_app(
+        self, app: App, cap: int, ids: list[int], min_votes: int = FULL_MIN_VOTES, languages: list[str] | None = None
+    ) -> list[dict]:
         """Everything on one app in this country (subscription or free), most popular first, up to cap: TMDB's
         discover, page by page (20 a page, each kept a day), movies and shows merged by popularity. Titles with
-        fewer than min_votes votes are left out (TMDB has many near-empty entries)."""
+        fewer than min_votes votes are left out (TMDB has many near-empty entries). languages: only titles first made
+        in these (codes like te, hi, en), asked of TMDB one language at a time."""
         hits: list[dict] = []
-        for kind in ("movie", "tv"):
-            page, pages = 1, 1
-            while (
-                page <= pages and page <= MAX_DISCOVER_PAGES and len([h for h in hits if h["media_type"] == kind]) < cap
-            ):
-                found = self._get(
-                    f"/discover/{kind}",
-                    with_watch_providers="|".join(map(str, ids)),
-                    watch_region=self.region,
-                    with_watch_monetization_types="flatrate|free|ads",
-                    sort_by="popularity.desc",
-                    include_adult="false",
-                    language="en-US",
-                    page=str(page),
-                    **{"vote_count.gte": str(min_votes)},
-                )
-                hits += [h | {"media_type": kind} for h in found.get("results", [])]
-                pages, page = found.get("total_pages", 1), page + 1
+        for language in languages or [""]:
+            for kind in ("movie", "tv"):
+                page, pages, got = 1, 1, 0
+                while page <= pages and page <= MAX_DISCOVER_PAGES and got < cap:
+                    found = self._discover(kind, ids, page, min_votes, language)
+                    results = found.get("results", [])
+                    hits += [h | {"media_type": kind} for h in results]
+                    got += len(results)
+                    pages, page = found.get("total_pages", 1), page + 1
         hits.sort(key=lambda h: h.get("popularity") or 0, reverse=True)
         return [self._item(h, [app]) for h in hits if h.get("poster_path")][:cap]
 
-    def catalog(self, per_app: int) -> list[dict]:
+    def on_app_count(self, ids: list[int], languages: list[str] | None = None) -> int:
+        """How many titles one app has (as on_app counts them), from TMDB's first page of each list: for a preview."""
+        return sum(
+            self._discover(kind, ids, 1, FULL_MIN_VOTES, language).get("total_results", 0)
+            for language in languages or [""]
+            for kind in ("movie", "tv")
+        )
+
+    def catalog(self, per_app: int, languages: list[str] | None = None) -> list[dict]:
         """Everything on each of the house's apps (up to per_app each, most popular first), then the week's
-        trending titles on them, each once (for onapps.py's library). A title on two apps carries both."""
+        trending titles on them, each once (for onapps.py's library). A title on two apps carries both. languages:
+        only titles first made in these (codes), trending ones too."""
         seen: dict[str, dict] = {}
         out = []
         ids = self.provider_ids() if self.ready else {}
         for app in self.apps:
             if not ids.get(app.key):
                 continue
-            for it in self.on_app(app, per_app, ids[app.key]):
+            for it in self.on_app(app, per_app, ids[app.key], languages=languages):
                 if it["tmdb"] in seen:
                     have = seen[it["tmdb"]]["apps"]
                     if all(a["app"] != app.key for a in have):
@@ -327,6 +345,8 @@ class Streaming:
                 seen[it["tmdb"]] = it
                 out.append(it)
         for it in self.trending():
+            if languages and it.get("language") not in languages:
+                continue
             if it["tmdb"] not in seen:
                 seen[it["tmdb"]] = it
                 out.append(it)
@@ -343,6 +363,7 @@ class Streaming:
             "thumb": POSTER + h["poster_path"] if h.get("poster_path") else "",
             "backdrop": BACKDROP + h["backdrop_path"] if h.get("backdrop_path") else "",
             "desc": h.get("overview") or "",
+            "language": h.get("original_language") or "",
             "apps": [link(a, title) for a in apps],
         }
 

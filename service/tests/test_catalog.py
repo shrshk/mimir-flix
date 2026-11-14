@@ -9,7 +9,7 @@ import time
 from urllib.parse import unquote, parse_qs, quote, urlsplit
 
 import httpx
-from fastapi import Request
+from fastapi import FastAPI, Request
 import pytest
 from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
@@ -23,6 +23,7 @@ from mimir_tv.catalog_routes import hidden_libraries, listing, plugin_paths
 from mimir_tv.catalog_routes import router
 from mimir_tv import hls as hls_mod
 from mimir_tv.hls import HlsError, HlsRelay, from_tailnet
+from mimir_tv.into import router as into_router
 from mimir_tv.jellyfin import Jellyfin, JellyfinError
 from mimir_tv.jf_routes import router as jf_router
 from mimir_tv.kodi import Kodi
@@ -723,8 +724,7 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     remake2 = f"{SITE}/remake2"
     cat.pages[SECTIONS["Shows"]].append(folder("Long", remake2))
     cat.pages[remake2] = [video(f"Episode {n}", f"https://files.example/long/e{n}.mp4") for n in range(5, 0, -1)]
-    monkeypatch.setattr(mirror, "EPISODES_KEPT", 2)
-    mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t)
+    mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t, episodes=2)
     assert sorted(f.name for f in (shows_root / "Long").rglob("*.strm")) == ["Long S01E04.strm", "Long S01E05.strm"]
     fake.favourites.add("series:Long")
     app_jobs.whole_catalogue(jobs, home, jf, media, air)
@@ -772,7 +772,7 @@ def test_a_limited_whole_catalogue_keeps_the_newest_of_each_category_and_trashes
     films.append(movie("D1", "Hindi dubbed"))  # a dub is a language of its own
 
     def run(limit):
-        settings.save({"providers": [entry]} | limit, home.config)
+        settings.save({"providers": [entry], "wholphin_rows": False} | limit, home.config)
         home.get("tv1")[1].extra_movies = films
         return app_jobs.whole_catalogue(jobs, home, jf, media, air, trash=trash)
 
@@ -791,6 +791,45 @@ def test_a_limited_whole_catalogue_keeps_the_newest_of_each_category_and_trashes
     assert [d.name for d in shows_root.iterdir() if d.is_dir()] == ["Dark"]
     run({"mirror_languages": ["Telugu", "Hindi"], "mirror_per_category": 2})
     assert not (movies_root / "D1").exists()
+
+
+def test_into_jellyfin_previews_without_moving_anything_then_saves_the_houses_choice(home, tmp_path):
+    media, air = tmp_path / "media", "http://air:8724"
+    movies_root = media / "tv1-movies"
+    jobs = Jobs(tmp_path / "mimir-tv.db", "mimir-tv")
+    app_jobs.define(jobs)
+    fake = FakeJellyfin()
+    jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
+    settings.save({"providers": [{"id": "tv1", "name": "My TV", "kind": "fakecat", "mirror": True}]}, home.config)
+
+    def movie(title, language):
+        url = f"https://files.example/movies/{title}.mkv"
+        return {"kind": "movie", "url": url, "title": title, "page": SECTIONS["Movies"], "language": language}
+
+    home.get("tv1")[1].extra_movies = [movie("T1", "Telugu"), movie("T2", "Telugu"), movie("H1", "Hindi")]
+    app_jobs.whole_catalogue(jobs, home, jf, media, air)  # no limit yet: all of it is in
+    fake.watched.add(str(movies_root / "T2" / "T2.strm"))
+    api = FastAPI()
+    api.include_router(into_router(home.config, home, jf, media, None))
+    c = TestClient(api, client=("127.0.0.1", 5000))
+
+    now = c.get("/api/settings/into").json()
+    assert now["providers"] == [{"id": "tv1", "name": "My TV", "mirror": True, "can": True}]
+    assert now["offered"][:2] == ["Telugu", "Hindi"]  # most titles first
+    # Telugu only, one per category: T1 wanted; T2 watched (stays); H1 and Heat would go. Nothing moves yet.
+    seen = c.post("/api/settings/into/preview", json={"languages": ["Telugu"], "per_category": 1}).json()
+    assert seen["catalogue"][0]["movies"] == {"wanted": 1, "now": 4, "to_trash": 2}
+    assert {"T1", "T2", "H1", "Heat (1995)"} <= {d.name for d in movies_root.iterdir()}
+
+    assert c.put("/api/settings/into", json={"languages": ["Telugu", "Telugu"]}).status_code == 422
+    saved = c.put("/api/settings/into", json={"languages": ["Telugu"], "per_category": 1, "mirror": {"tv1": False}})
+    assert saved.status_code == 200
+    cfg = settings.load(home.config)
+    assert (cfg["library_languages"], cfg["mirror_per_category"], cfg["providers"][0]["mirror"]) == (
+        ["Telugu"],
+        1,
+        False,
+    )
 
 
 def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins_files(cat, tmp_path):

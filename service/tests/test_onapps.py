@@ -15,7 +15,7 @@ class FakeStreaming:
     def __init__(self, items):
         self.items = items
 
-    def catalog(self, per_app):
+    def catalog(self, per_app, languages=None):
         return self.items
 
 

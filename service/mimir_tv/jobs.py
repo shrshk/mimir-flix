@@ -14,7 +14,7 @@ from jobkit import Jobs, page_html
 from mimir_tv import grouping, mirror, onapps, settings, wholphin
 from mimir_tv.catalog import CatalogError, Catalogs, Job
 from mimir_tv.catalog_routes import libraries, roots
-from mimir_tv.jellyfin import Jellyfin
+from mimir_tv.jellyfin import Jellyfin, JellyfinError
 from mimir_tv.strm import refresh_shows
 from mimir_tv.watchlist import Watchlist
 from mimir_tv.wizard import allowed
@@ -66,9 +66,16 @@ def whole_catalogue(
                 continue
             where, names = roots(media_root, entry["id"]), libraries(entry)
             mirror.follow_favourites(where["shows"], jf.favourite_show_paths())  # all their episodes from now
-            langs, cap = cfg["mirror_languages"], cfg["mirror_per_category"]
+            langs, cap = cfg["library_languages"], cfg["mirror_per_category"]
             done = mirror.mirror(
-                cat, entry["id"], where["shows"], where["movies"], resolver, languages=langs, per_category=cap
+                cat,
+                entry["id"],
+                where["shows"],
+                where["movies"],
+                resolver,
+                languages=langs,
+                per_category=cap,
+                episodes=cfg["mirror_episodes"],
             )
             removed = {"shows": 0, "movies": 0}
             if langs or cap:
@@ -104,26 +111,35 @@ def whole_catalogue(
                 )
                 + (f", {waiting} shows waiting" if waiting else "")
             )
-            if cfg.get("wholphin_home"):
-                notes.append("Wholphin home: " + wholphin.home(jf, names["shows"], names["movies"], cfg))
-                have = {x["Name"]: x.get("ItemId") for x in jf.libraries()}
-                if have.get(names["shows"]) and have.get(names["movies"]):
-                    langs = cfg["wholphin_home"].get("languages", [])
-                    notes.append(
-                        "Collections: " + grouping.group(jf, have[names["shows"]], have[names["movies"]], langs)
-                    )
+            if langs:  # the house's languages: Wholphin's rows and the collections follow them
+                try:
+                    if cfg["wholphin_rows"]:
+                        notes.append("Wholphin home: " + wholphin.home(jf, names["shows"], names["movies"], cfg))
+                    have = {x["Name"]: x.get("ItemId") for x in jf.libraries()}
+                    if have.get(names["shows"]) and have.get(names["movies"]):
+                        notes.append(
+                            "Collections: " + grouping.group(jf, have[names["shows"]], have[names["movies"]], langs)
+                        )
+                except JellyfinError as e:  # the titles are in; the layout is tried again next run
+                    notes.append(f"Wholphin home and collections not updated: {e}")
         run.summary = "; ".join(notes) or "no provider has the whole catalogue turned on"
         return run.summary
 
 
-def on_my_apps(jobs: Jobs, streaming, jf: Jellyfin, media_root: Path, base: str) -> str:
-    """The streaming apps' popular titles into the On my apps library (onapps.py), made when missing."""
+def on_my_apps(jobs: Jobs, streaming, jf: Jellyfin, media_root: Path, base: str, cfg: dict | None = None) -> str:
+    """The streaming apps' popular titles into the On my apps library (onapps.py), made when missing; how many and
+    which languages come from Settings (Into Jellyfin)."""
+    cfg = cfg or settings.DEFAULTS
     with jobs.run(ON_MY_APPS) as run:
+        if not cfg["onapps"]:
+            run.summary = "off (Settings, Into Jellyfin): titles already there go after two weeks"
+            return run.summary
         if not streaming.ready:
             run.summary = "no TMDB token (Settings)"
             return run.summary
         root = media_root / "apps"
-        done = onapps.fill(streaming, root, base)
+        langs = onapps.codes(cfg["library_languages"]) if cfg["onapps_languages"] else []
+        done = onapps.fill(streaming, root, base, per_app=cfg["onapps_per_app"], languages=langs or None)
         lib = next((x for x in jf.libraries() if x["Name"] == onapps.LIBRARY), None)
         if lib is None:
             jf.create_library(onapps.LIBRARY, "movies", [str(root)])

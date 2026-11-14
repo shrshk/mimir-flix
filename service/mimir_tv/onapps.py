@@ -16,7 +16,21 @@ import httpx
 
 from mimir_tv import badges
 from mimir_tv.mirror import folder_name, write_details
+from mimir_tv.recs import LANGUAGES
 from mimir_tv.streaming import Streaming
+
+# Language names as catalogues and Settings write them -> TMDB's codes (a title's original language).
+CODES = {name: code for code, name in LANGUAGES.items() if code != "any"} | {
+    "Bangla": "bn",
+    "Gujarati": "gu",
+    "Punjabi": "pa",
+}
+
+
+def codes(names: list[str]) -> list[str]:
+    """TMDB codes for the names it knows (a name without one is left out of the filter)."""
+    return [CODES[n] for n in names if n in CODES]
+
 
 TRENDING = "Trending on your apps"  # mimir-tv's home row names, kept for the playlists
 LIBRARY = "On my apps"  # its Jellyfin library (movies), at <media_root>/apps
@@ -36,10 +50,17 @@ def launch_line(base: str, app: str, tmdb: str, title: str) -> str:
 
 
 def fill(
-    streaming: Streaming, root: Path, base: str, http: httpx.Client | None = None, now: float | None = None
+    streaming: Streaming,
+    root: Path,
+    base: str,
+    http: httpx.Client | None = None,
+    now: float | None = None,
+    per_app: int = PER_APP,
+    languages: list[str] | None = None,
 ) -> dict:
-    """One refresh: the apps' popular titles written or kept, those gone for KEEP_FOR removed. base: mimir-tv's
-    address as the TV reaches it. Returns counts."""
+    """One refresh: the apps' popular titles (per_app each; languages: only titles first made in these, as codes)
+    written or kept, those gone for KEEP_FOR removed. base: mimir-tv's address as the TV reaches it. Returns
+    counts."""
     now = time.time() if now is None else now
     root.mkdir(parents=True, exist_ok=True)
     kept = state(root)
@@ -50,7 +71,7 @@ def fill(
     own = http is None
     client = http or httpx.Client(timeout=20, follow_redirects=True)
     try:
-        for it in streaming.catalog(PER_APP):
+        for it in streaming.catalog(per_app, languages):
             title = it["title"]
             label = f"{title} ({it['year']})" if it.get("year") else title
             name = by_tmdb.get(it["tmdb"]) or folder_name(label, it["tmdb"], taken)
