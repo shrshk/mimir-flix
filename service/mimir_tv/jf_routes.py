@@ -7,6 +7,7 @@ through Jellyfin's HLS, which converts on the Air's hardware."""
 
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request
@@ -79,6 +80,14 @@ def card(i: dict) -> dict:
         "show": f"jf:{i['SeriesId']}" if i.get("SeriesId") else "",
         "show_title": i.get("SeriesName") or "",
     }
+
+
+def since(date: str | None) -> float:
+    """A Jellyfin date (UTC, up to 7 decimals) in seconds; 0 when there is none."""
+    try:
+        return datetime.fromisoformat(date[:19]).replace(tzinfo=UTC).timestamp() if date else 0.0
+    except ValueError:
+        return 0.0
 
 
 def play_source(item: dict) -> str:
@@ -266,8 +275,12 @@ def router(
 
     @api.get("/api/jf/list")
     def listed():
+        """Newest on My list first (added: when, in seconds)."""
         move_old_list()
-        return [card(i) for i in guard(jf.favourites)]
+        found = {i["Id"]: i for i in guard(jf.favourites)}
+        library = {i: since(x.get("DateCreated")) for i, x in found.items()}
+        added = watchlist.favourites_added(library) if watchlist else library
+        return sorted((card(x) | {"added": added[i]} for i, x in found.items()), key=lambda c: -c["added"])
 
     @api.post("/api/jf/list", status_code=201)
     def add_to_list(body: Play):
@@ -275,6 +288,8 @@ def router(
         if guard(jf.user_data, body.id).get("IsFavorite"):
             return {"added": [], "already": [found["title"]]}
         guard(jf.set_favourite, body.id, True)
+        if watchlist:
+            watchlist.favourite(body.id, True)
         return {"added": [found["title"]], "already": []}
 
     @api.delete("/api/jf/list", status_code=204)
@@ -282,6 +297,8 @@ def router(
         if not guard(jf.user_data, id).get("IsFavorite"):
             raise HTTPException(404, "not on My list")
         guard(jf.set_favourite, id, False)
+        if watchlist:
+            watchlist.favourite(id, False)
 
     @api.post("/api/jf/tv")
     def on_tv(p: Play):

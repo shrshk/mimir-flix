@@ -299,8 +299,7 @@ class Jellyfin:
             "Recursive": "true",
             "Filters": "IsFavorite",
             "IncludeItemTypes": self.LISTED,
-            "Fields": self.FIELDS,
-            "SortBy": "SortName",
+            "Fields": self.FIELDS + ",DateCreated",
         }
         return (self._call("GET", "/Items", params) or {}).get("Items", [])
 

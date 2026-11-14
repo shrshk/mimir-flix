@@ -459,6 +459,23 @@ def test_my_list_titles_in_the_library_are_jellyfin_favourites(tmp_path):
     assert c.delete("/api/jf/list", params={"id": "../Users"}).status_code == 422
 
 
+def test_my_list_shows_the_last_favourite_first_wherever_it_was_made(tmp_path, monkeypatch):
+    _, c, _ = setup(tmp_path)
+    clock = iter(range(1_800_000_000, 1_800_001_000, 10))  # 2027: after the library dates
+    monkeypatch.setattr("mimir_tv.watchlist.time.time", lambda: next(clock))
+    # Favourites from before the list noted dates: newest in the library first.
+    monkeypatch.setitem(ITEMS[MOVIE], "DateCreated", "2020-01-01T00:00:00.0000000Z")
+    monkeypatch.setitem(ITEMS[CLIP], "DateCreated", "2021-01-01T00:00:00Z")
+    USER_DATA[MOVIE], USER_DATA[CLIP] = {"IsFavorite": True}, {"IsFavorite": True}
+    assert [i["id"] for i in c.get("/api/jf/list").json()] == [CLIP, MOVIE]
+    c.delete("/api/jf/list", params={"id": MOVIE})
+    c.post("/api/jf/list", json={"id": MOVIE})  # added again here: now the newest
+    assert [i["id"] for i in c.get("/api/jf/list").json()] == [MOVIE, CLIP]
+    USER_DATA[EP1] = {"IsFavorite": True}  # made a favourite in a Jellyfin app (Wholphin): newest when seen
+    listed = c.get("/api/jf/list").json()
+    assert [i["id"] for i in listed] == [EP1, MOVIE, CLIP] and listed[0]["added"] > listed[1]["added"]
+
+
 def test_library_titles_on_the_old_list_become_favourites_once(tmp_path):
     _, c, _ = setup(tmp_path)
     old = Watchlist(tmp_path / "m.db")

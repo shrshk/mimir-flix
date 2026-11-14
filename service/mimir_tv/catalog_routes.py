@@ -362,6 +362,7 @@ def router(
             i = {"title": s["title"], "desc": "", "kind": "folder" if show else "video", "thumb": s["thumb"]}
             i |= {"url": s["url"], "sub": s["sub"], "here": bool(s["here"])}
             tile = item(pid, i, have) | {"key": node_id(pid, s["url"]) if show else s["url"], "new": s["new"]}
+            tile["added"] = s["added"]
             if not show and s["page"]:
                 tile["page"] = node_id(pid, s["page"])
             out.append(tile)

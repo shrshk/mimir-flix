@@ -35,6 +35,8 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS watchlist (
     item TEXT,              -- a streaming title as the page shows it (JSON); NULL for a provider's entries
     provider TEXT NOT NULL DEFAULT ''  -- the provider of a show or video; '' (saved before ids): the first one
 )"""
+# Jellyfin keeps no date for a favourite, so My list notes when it first saw each one ('' marks the first look).
+FAVOURITES = "CREATE TABLE IF NOT EXISTS favourites (id TEXT PRIMARY KEY, added REAL NOT NULL)"
 
 
 def episodes(cat: Catalog, show_url: str, ttl: int) -> set[str]:
@@ -53,6 +55,7 @@ class Watchlist:
         self.lock = threading.Lock()
         with self.lock, self.db:
             self.db.execute(SCHEMA)
+            self.db.execute(FAVOURITES)
             have = {r[1] for r in self.db.execute("PRAGMA table_info(watchlist)")}  # a list from before
             if "item" not in have:
                 self.db.execute("ALTER TABLE watchlist ADD COLUMN item TEXT")
@@ -100,7 +103,26 @@ class Watchlist:
             )
 
     def titles(self, kind: str = "title") -> list[dict]:
-        return [json.loads(i["item"]) for i in self.items() if i["kind"] == kind and i["item"]]
+        return [json.loads(i["item"]) | {"added": i["added"]} for i in self.items() if i["kind"] == kind and i["item"]]
+
+    def favourites_added(self, ids: dict[str, float]) -> dict[str, float]:
+        """When each Jellyfin favourite went on My list. One made a favourite here is noted then (favourite()); one
+        made in a Jellyfin app, when the list first sees it. ids: each favourite and the date to use if the list has
+        never looked before (when it reached the library: the best guess for favourites made before this).
+        Favourites since removed are forgotten (made again later, they count from then)."""
+        with self.lock, self.db:
+            known = dict(self.db.execute("SELECT id, added FROM favourites").fetchall())
+            first, now = "" not in known, time.time()
+            out = {i: known.get(i, ids[i] if first else now) for i in ids}
+            self.db.execute("DELETE FROM favourites")
+            self.db.executemany("INSERT INTO favourites VALUES (?, ?)", [("", 0), *out.items()])
+        return out
+
+    def favourite(self, item_id: str, on: bool) -> None:
+        with self.lock, self.db:
+            self.db.execute("DELETE FROM favourites WHERE id = ?", (item_id,))
+            if on:
+                self.db.execute("INSERT INTO favourites VALUES (?, ?)", (item_id, time.time()))
 
     def remove(self, url: str) -> bool:
         with self.lock, self.db:

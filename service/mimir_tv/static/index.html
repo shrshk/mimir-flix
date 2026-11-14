@@ -631,6 +631,7 @@ function mergeStreaming(streams, local) {
 
 // My list: one list for the house. Titles in the home library are Jellyfin favourites (every Jellyfin app shows them);
 // titles on the streaming apps (by TMDB id) and each provider's shows and videos are kept on the Air, as pointers.
+// One list, the last added first.
 let saved = new Set(), shows = {}, toSave = [];
 const keyOf = t => t.node || t.url || (t.tmdb ? "tmdb:" + t.tmdb : t.jf ? "jf:" + t.jf : "");
 async function loadList() {
@@ -639,7 +640,8 @@ async function loadList() {
     api("/api/list/titles").catch(() => []),
     ...provs().map(p => api(P(p.id) + "/list").catch(() => [])),
   ]);
-  const l = [...library.map(t => ({...t, jf: t.id, key: "jf:" + t.id})), ...titles.map(t => ({...t, key: "tmdb:" + t.tmdb, sub: t.apps.map(a => a.name).join(", ") || t.year})), ...mine.flat()];
+  const l = [...library.map(t => ({...t, jf: t.id, key: "jf:" + t.id})), ...titles.map(t => ({...t, key: "tmdb:" + t.tmdb, sub: t.apps.map(a => a.name).join(", ") || t.year})), ...mine.flat()]
+    .sort((a, b) => (b.added || 0) - (a.added || 0));  // newest first, whichever kind it is
   saved = new Set(l.map(i => i.key));
   return l;
 }
