@@ -95,6 +95,8 @@ def fake(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="boom")
     if p == "/Items" and "Ids" in q:
         return httpx.Response(200, json={"Items": [ITEMS[q["Ids"]]] if q["Ids"] in ITEMS else []})
+    if p == "/Items" and q.get("SortBy") == "DateCreated":  # a show's newest episodes
+        return httpx.Response(200, json={"Items": [e for e in EPISODES if e.get("SeriesId") == q.get("ParentId")]})
     if p == "/Items" and "ParentId" in q:
         return httpx.Response(200, json={"Items": [ITEMS[MOVIE], ITEMS[CLIP]] if q["ParentId"] == HOME else []})
     if p == "/UserItems/Resume":
@@ -104,8 +106,6 @@ def fake(request: httpx.Request) -> httpx.Response:
         )
     if p == "/Shows/NextUp":
         return httpx.Response(500, text="boom") if NEXT_UP is None else httpx.Response(200, json={"Items": NEXT_UP})
-    if p == "/Items" and q.get("SortBy") == "DateCreated":
-        return httpx.Response(200, json={"Items": EPISODES})
     if p == "/Items" and "SearchTerm" in q:
         return httpx.Response(
             200, json={"Items": [i for i in ITEMS.values() if q["SearchTerm"].lower() in i["Name"].lower()]}
@@ -235,8 +235,13 @@ def test_passthrough_streams_ranges_and_keeps_the_key_on_the_server(tmp_path):
     assert c.get("/jf/Library/VirtualFolders").status_code == 404
     assert c.get("/jf/Users").status_code == 404
     # Nor by climbing out of an allowed path: dots (encoded or not) never reach Jellyfin, which would answer.
-    for up in ("Videos/%2e%2e/Auth/Keys", "Videos/../Auth/Keys", f"Items/{MOVIE}/Images/%2e%2e/%2e%2e/%2e%2e/Auth/Keys",
-               f"Videos/{MOVIE}/%2E%2E/%2E%2E/Auth/Keys", f"Videos/{MOVIE}/..%2f..%2fAuth/Keys"):
+    for up in (
+        "Videos/%2e%2e/Auth/Keys",
+        "Videos/../Auth/Keys",
+        f"Items/{MOVIE}/Images/%2e%2e/%2e%2e/%2e%2e/Auth/Keys",
+        f"Videos/{MOVIE}/%2E%2E/%2E%2E/Auth/Keys",
+        f"Videos/{MOVIE}/..%2f..%2fAuth/Keys",
+    ):
         r = c.get("/jf/" + up)
         assert r.status_code == 404 and b"admin-key" not in r.content, up
 
@@ -395,7 +400,15 @@ def test_home_rows_continue_watching_next_up_and_new_episodes(tmp_path, monkeypa
                 "ParentIndexNumber": 1,
                 "IndexNumber": 7,
                 "DateCreated": "2099-01-01T00:00:00",
-            }
+            },
+            # A show nobody here watches (the whole catalogue adds many): not under New episodes.
+            {
+                "Type": "Episode",
+                "SeriesName": "Other",
+                "SeriesId": "s9",
+                "Id": "x1",
+                "DateCreated": "2099-01-02T00:00:00",
+            },
         ],
     )
     monkeypatch.setattr(
@@ -410,6 +423,7 @@ def test_home_rows_continue_watching_next_up_and_new_episodes(tmp_path, monkeypa
     assert [(i["title"], i["progress"]) for i in rows["resume"]] == [("Wedding Film 4K", 25)]
     assert [(i["title"], i["sub"]) for i in rows["next_up"]] == [("Episode 5", "The Traitors (Telugu) · S01E05")]
     assert (rows["next_up"][0]["show"], rows["next_up"][0]["show_title"]) == ("jf:s1", "The Traitors (Telugu)")
+    assert [i["title"] for i in rows["new"]] == ["Episode 7"]
     new = rows["new"][0]
     assert (new["sub"], new["thumb"]) == (
         "The Traitors (Telugu) · S01E07",
@@ -418,7 +432,7 @@ def test_home_rows_continue_watching_next_up_and_new_episodes(tmp_path, monkeypa
     # One row failing leaves the others.
     monkeypatch.setattr("tests.test_jf.NEXT_UP", None)
     rows = c.get("/api/jf/home").json()
-    assert rows["next_up"] == [] and len(rows["resume"]) == 1 and len(rows["new"]) == 1
+    assert rows["next_up"] == [] and len(rows["resume"]) == 1
 
 
 def test_my_list_titles_in_the_library_are_jellyfin_favourites(tmp_path):

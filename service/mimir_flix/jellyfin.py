@@ -417,19 +417,40 @@ class Jellyfin:
         }
         return (self._call("GET", "/Items", params) or {}).get("Items", [])
 
+    def my_shows(self) -> set[str]:
+        """The shows the user watches (in Next up or Continue watching) or favourited: their Jellyfin ids. A source
+        Jellyfin fails to give is left out."""
+        out: set[str] = set()
+        for get, key in ((lambda: self.next_up(100), "SeriesId"), (lambda: self.resume(100), "SeriesId")):
+            try:
+                out |= {i[key] for i in get() if i.get(key)}
+            except JellyfinError:
+                pass  # the others still count
+        try:
+            out |= {i["Id"] for i in self.favourites() if i.get("Type") == "Series"}
+        except JellyfinError:
+            pass
+        return out
+
     def recent_episodes(self, days: int = 7, limit: int = 60) -> list[dict]:
-        """Episodes added in the last `days`, newest first (providers' followed shows get theirs hourly)."""
-        params = {
-            "Recursive": "true",
-            "IncludeItemTypes": "Episode",
-            "SortBy": "DateCreated",
-            "SortOrder": "Descending",
-            "Limit": str(limit),
-            "Fields": "DateCreated",
-        }
+        """Episodes added in the last `days` to the user's shows (my_shows), newest first. Other shows are left out:
+        the whole catalogue (mirror.py) adds hundreds of shows nobody here watches."""
         since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
-        items = (self._call("GET", "/Items", params) or {}).get("Items", [])
-        return [i for i in items if (i.get("DateCreated") or "")[:19] >= since]
+        items = []
+        for show in sorted(self.my_shows()):
+            params = {
+                "ParentId": show,
+                "Recursive": "true",
+                "IncludeItemTypes": "Episode",
+                "SortBy": "DateCreated",
+                "SortOrder": "Descending",
+                "Limit": "20",
+                "Fields": "DateCreated",
+            }
+            got = (self._call("GET", "/Items", params) or {}).get("Items", [])
+            items += [i for i in got if (i.get("DateCreated") or "")[:19] >= since]
+        items.sort(key=lambda i: i.get("DateCreated") or "", reverse=True)
+        return items[:limit]
 
     def find(self, library: str, path: str, wait: float = 2, tries: int = 30) -> str:
         """The id Jellyfin gives a file or folder once its scan reaches it."""

@@ -133,7 +133,7 @@ def test_the_token_is_made_once_and_only_the_owner_can_read_it(tmp_path):
 def test_whats_new_lists_episodes_the_library_added_lately_and_leaves_out_older_ones(tmp_path, monkeypatch):
     day = 86400
     stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%S.0000000Z", time.gmtime(time.time() - ago))  # noqa: E731
-    episode = {"Type": "Episode", "SeriesName": "Koffee with Karan", "ParentIndexNumber": 9}
+    episode = {"Type": "Episode", "SeriesName": "Koffee with Karan", "SeriesId": "k1", "ParentIndexNumber": 9}
     monkeypatch.setattr(
         "tests.test_jf.EPISODES",
         [
@@ -141,6 +141,7 @@ def test_whats_new_lists_episodes_the_library_added_lately_and_leaves_out_older_
             episode | {"Id": "e2", "Name": "Older", "IndexNumber": 2, "DateCreated": stamp(9 * day)},
         ],
     )
+    monkeypatch.setattr("tests.test_jf.NEXT_UP", [episode | {"Id": "e1"}])  # a show being watched
     new, failed = tool(setup(tmp_path), "whats_new")
     assert not failed and "my_list" not in new  # no providers: no My list from them
     assert [(e["jellyfin_id"], e["show"], e["episode"]) for e in new["library"]] == [
