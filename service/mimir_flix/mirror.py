@@ -14,11 +14,16 @@ Each title also gets Jellyfin's own metadata files from what the catalogue says 
 movie.nfo or tvshow.nfo (plot, its language and kind as genres, a TV channel as studio, year) and poster.jpg, so
 Jellyfin apps can list titles by language or channel even where online metadata finds nothing.
 
-What was written is kept in .mirrored.json in each root ({link: {"name", "at"}}); nothing is removed in this
-version when a title leaves the catalogue."""
+What was written is kept in .mirrored.json in each root ({link: {"name", "at"}}).
+
+A house can keep it to some languages and the newest few titles of each category (settings mirror_languages and
+mirror_per_category; wanted): a title outside them is not written, and one written before goes to the Trash (prune),
+unless it was added by hand or someone watched, is watching or favourited it. Anything else is a search away in
+mimir-flix, which adds it to Jellyfin."""
 
 import json
 import re
+import shutil
 import time
 from xml.sax.saxutils import escape
 from pathlib import Path
@@ -28,7 +33,7 @@ import httpx
 
 from mimir_flix import badges
 from mimir_flix.catalog import Catalog, CatalogError
-from mimir_flix.strm import follow, followed, safe, write_movie, write_show
+from mimir_flix.strm import added, follow, followed, safe, write_movie, write_show
 
 MIRRORED = ".mirrored.json"
 SHOWS_PER_RUN = 100  # page reads stay polite: the first pass over ~2,000 shows takes about a day
@@ -53,6 +58,21 @@ def save(root: Path, done: dict[str, dict]) -> None:
     tmp.replace(root / MIRRORED)
 
 
+def wanted(listed: list[dict], languages: list[str], per_category: int) -> list[dict]:
+    """The titles to mirror: those in languages (empty: every language; a dub has its own, e.g. "Hindi dubbed"),
+    then the first per_category of each category (0: all). A category is a kind, language, genres and channel, as
+    the catalogue lists it, newest first."""
+    out, seen = [], {}
+    for x in listed:
+        if languages and x.get("language") not in languages:
+            continue
+        key = (x["kind"], x.get("language"), tuple(x.get("genres", [])), x.get("studio"))
+        seen[key] = seen.get(key, 0) + 1
+        if not per_category or seen[key] <= per_category:
+            out.append(x)
+    return out
+
+
 def folder_name(title: str, url: str, taken: dict[str, str]) -> str:
     """The show's folder: its title, or the title with a number when another show already has that name (macOS
     names ignore case). taken: folder name (lower case) -> the show's link."""
@@ -71,11 +91,14 @@ def mirror(
     per_run: int = SHOWS_PER_RUN,
     now: float | None = None,
     http: httpx.Client | None = None,
+    languages: list[str] | None = None,
+    per_category: int = 0,
 ) -> dict[str, int]:
-    """One run: every movie not written yet, then up to per_run shows, then details for every written title (a
-    batch of posters a run). Returns counts of what was written."""
+    """One run: every wanted movie not written yet, then up to per_run wanted shows, then details for every written
+    title (a batch of posters a run). Returns counts of what was written."""
     now = time.time() if now is None else now
-    listed = cat.everything()
+    everything = cat.everything()
+    listed = wanted(everything, languages or [], per_category)
     out = {"movies": 0, "shows": 0, "episodes": 0, "failed": 0, "details": 0, "posters": 0}
 
     movies, taken_movies, changed = mirrored(movies_root), {}, False
@@ -124,7 +147,7 @@ def mirror(
         save(shows_root, shows)  # after each show, so a stop part-way loses nothing
 
     names = {u: r["name"] for u, r in shows.items()} | by_hand
-    dubbed = in_several_languages(listed)
+    dubbed = in_several_languages(everything)  # from the whole list, so names stay put as the limit moves
     budget = [POSTERS_PER_RUN]
     own = http is None  # a client passed in stays open for its owner
     client = http or httpx.Client(timeout=20, follow_redirects=True)
@@ -262,7 +285,43 @@ def follow_favourites(shows_root: Path, favourite_paths: list[str]) -> list[str]
     return out
 
 
-def left(cat: Catalog, shows_root: Path, now: float | None = None) -> int:
-    """How many listed shows are still waiting for their first write (for the job's summary)."""
+def left(cat: Catalog, shows_root: Path, languages: list[str] | None = None, per_category: int = 0) -> int:
+    """How many wanted shows are still waiting for their first write (for the job's summary)."""
     shows, by_hand = mirrored(shows_root), set(followed(shows_root).values())
-    return sum(1 for s in cat.everything() if s["kind"] == "show" and s["url"] not in shows and s["url"] not in by_hand)
+    listed = wanted(cat.everything(), languages or [], per_category)
+    return sum(1 for s in listed if s["kind"] == "show" and s["url"] not in shows and s["url"] not in by_hand)
+
+
+def names_in(root: Path, paths: list[str]) -> set[str]:
+    """The title folders (lower case) directly under root that hold these paths (Jellyfin's paths of items)."""
+    out = set()
+    for p in map(Path, paths):
+        if p.is_relative_to(root) and p != root:
+            out.add(p.relative_to(root).parts[0].lower())
+    return out
+
+
+def prune(root: Path, keep: set[str], protected: set[str], trash: Path) -> int:
+    """Moves mirrored titles not in keep (links) to trash, and forgets them; a title added by hand (followed or
+    added) or protected (folder names in lower case: watched, in progress or favourited) stays. Returns how many
+    moved. Only mirror.py's own titles are touched, and nothing at all when keep is empty (no list to go by)."""
+    if not keep:
+        return 0
+    done = mirrored(root)
+    by_hand = {n.lower() for n in [*followed(root), *added(root)]}
+    gone = 0
+    for url, rec in list(done.items()):
+        name = rec["name"]
+        if url in keep or name.lower() in protected or name.lower() in by_hand:
+            continue
+        src = root / name
+        if src.is_dir():
+            dest, n = trash / name, 2
+            while dest.exists():
+                dest, n = trash / f"{name} {n}", n + 1
+            shutil.move(src, dest)
+        del done[url]
+        gone += 1
+    if gone:
+        save(root, done)
+    return gone

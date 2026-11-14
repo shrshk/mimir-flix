@@ -19,6 +19,7 @@ class FakeJellyfin:
         self.played: list[str] = []
         self.removed: set[str] = set()  # items deleted in Jellyfin (their files may still be there)
         self.favourites: set[str] = set()
+        self.watched: set[str] = set()  # paths of watched or part-watched items
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         q, path, m = request.url.params, request.url.path, request.method
@@ -64,6 +65,8 @@ class FakeJellyfin:
             if self.running is not None:
                 tasks[0] |= {"State": "Running", "CurrentProgressPercentage": self.running}
             return httpx.Response(200, json=tasks)
+        if path == "/Items" and q.get("Filters") in ("IsPlayed", "IsResumable"):
+            return httpx.Response(200, json={"Items": [{"Path": x} for x in sorted(self.watched)]})
         if path == "/Items" and q.get("Filters") == "IsFavorite" and q.get("Fields") == "Path":  # favourited shows
             shows = [d for lib in self.libs.values() if lib["CollectionType"] == "tvshows" for r in lib["Locations"]
                      for d in Path(r).iterdir() if d.is_dir()]

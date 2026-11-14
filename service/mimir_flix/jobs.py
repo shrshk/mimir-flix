@@ -21,6 +21,7 @@ from mimir_flix.wizard import allowed
 
 NEW_EPISODES = "new-episodes"
 WHOLE_CATALOGUE = "whole-catalogue"
+TRASH = Path.home() / ".Trash"  # where titles outside the whole catalogue's limit go (mirror.prune)
 ON_MY_APPS = "on-my-apps"
 
 
@@ -51,7 +52,9 @@ def new_episodes(
         return found
 
 
-def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Path, resolver: str) -> str:
+def whole_catalogue(
+    jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Path, resolver: str, trash: Path = TRASH
+) -> str:
     """Every provider that turned it on ("mirror": true in its settings entry): its whole catalogue into its
     Jellyfin libraries, a batch of shows a run (mirror.py), then a scan of the libraries that changed (made when
     missing)."""
@@ -63,12 +66,21 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
                 continue
             where, names = roots(media_root, entry["id"]), libraries(entry)
             mirror.follow_favourites(where["shows"], jf.favourite_show_paths())  # all their episodes from now
-            done = mirror.mirror(cat, entry["id"], where["shows"], where["movies"], resolver)
+            langs, cap = cfg["mirror_languages"], cfg["mirror_per_category"]
+            done = mirror.mirror(
+                cat, entry["id"], where["shows"], where["movies"], resolver, languages=langs, per_category=cap
+            )
+            removed = {"shows": 0, "movies": 0}
+            if langs or cap:
+                keep = {x["url"] for x in mirror.wanted(cat.everything(), langs, cap)}
+                kept = jf.kept_paths()
+                for kind in removed:
+                    removed[kind] = mirror.prune(where[kind], keep, mirror.names_in(where[kind], kept), trash)
             have = {x["Name"]: x for x in jf.libraries()}
             touched = done["details"] or done["posters"]  # a changed .nfo or a new poster: Jellyfin reads them again
             for kind, jf_kind, wrote in (
-                ("shows", "tvshows", done["shows"] or touched),
-                ("movies", "movies", done["movies"] or touched),
+                ("shows", "tvshows", done["shows"] or removed["shows"] or touched),
+                ("movies", "movies", done["movies"] or removed["movies"] or touched),
             ):
                 if not wrote:
                     continue
@@ -76,13 +88,18 @@ def whole_catalogue(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Pa
                     jf.scan(have[names[kind]].get("ItemId"))
                 else:
                     jf.create_library(names[kind], jf_kind, [str(where[kind])])
-            waiting = mirror.left(cat, where["shows"])
+            waiting = mirror.left(cat, where["shows"], langs, cap)
             notes.append(
                 f"{entry['name']}: {done['movies']} movies, {done['shows']} shows ({done['episodes']} episodes)"
                 + (f", {done['failed']} failed" if done["failed"] else "")
                 + (
                     f", {done['details']} details and {done['posters']} posters"
                     if done["details"] or done["posters"]
+                    else ""
+                )
+                + (
+                    f", {removed['movies']} movies and {removed['shows']} shows to the Trash"
+                    if any(removed.values())
                     else ""
                 )
                 + (f", {waiting} shows waiting" if waiting else "")

@@ -29,7 +29,7 @@ from mimir_flix.mcp_server import router as mcp_router
 from mimir_flix.providers import Providers
 from mimir_flix.providers import router as providers_router
 from mimir_flix.resolver import start_resolver
-from mimir_flix.strm import follow, followed, refresh_shows, show_folder, write_movie, write_show
+from mimir_flix.strm import add, follow, followed, refresh_shows, show_folder, write_movie, write_show
 from mimir_flix.vault import Vault
 from mimir_flix.watchlist import Watchlist
 from mimir_flix.watchlist import router as list_router
@@ -745,6 +745,45 @@ def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home,
     assert not (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()
     assert mirror.mirror(cat, "tv1", shows_root, movies_root, air, now=t + week + 1)["shows"] >= 1
     assert (shows_root / "Dark/Season 02/Dark S02E02 - New.strm").exists()
+
+
+def test_a_limited_whole_catalogue_keeps_the_newest_of_each_category_and_trashes_the_rest(home, tmp_path):
+    media, air, trash = tmp_path / "media", "http://air:8724", tmp_path / "Trash"
+    shows_root, movies_root = media / "tv1", media / "tv1-movies"
+    trash.mkdir()
+    jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
+    app_jobs.define(jobs)
+    fake = FakeJellyfin()
+    jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
+    entry = {"id": "tv1", "name": "My TV", "kind": "fakecat", "mirror": True}
+
+    def movie(title, language):
+        url = f"https://files.example/movies/{title}.mkv"
+        return {"kind": "movie", "url": url, "title": title, "page": SECTIONS["Movies"], "language": language}
+
+    films = [movie(t, "Telugu") for t in ("T1", "T2", "T3", "T4")] + [movie("H1", "Hindi")]
+    films.append(movie("D1", "Hindi dubbed"))  # a dub is a language of its own
+
+    def run(limit):
+        settings.save({"providers": [entry]} | limit, home.config)
+        home.get("tv1")[1].extra_movies = films
+        return app_jobs.whole_catalogue(jobs, home, jf, media, air, trash=trash)
+
+    run({})  # no limit: everything is written
+    assert {"T1", "T2", "T3", "T4", "H1", "D1", "Heat (1995)"} <= {d.name for d in movies_root.iterdir()}
+
+    # With a limit, the newest two of each category in Telugu and Hindi stay. So do a watched title past the
+    # limit, a movie added by hand, and a favourited show; the rest go to the Trash and are not written again.
+    fake.watched.add(str(movies_root / "T3" / "T3.strm"))
+    add(movies_root, "Heat (1995)")
+    fake.favourites.add("series:Dark")
+    summary = run({"mirror_languages": ["Telugu", "Hindi"], "mirror_per_category": 2})
+    assert "to the Trash" in summary
+    assert sorted(d.name for d in movies_root.iterdir() if d.is_dir()) == ["H1", "Heat (1995)", "T1", "T2", "T3"]
+    assert {"D1", "T4"} <= {d.name for d in trash.iterdir()} and (trash / "D1" / "D1.strm").exists()
+    assert [d.name for d in shows_root.iterdir() if d.is_dir()] == ["Dark"]
+    run({"mirror_languages": ["Telugu", "Hindi"], "mirror_per_category": 2})
+    assert not (movies_root / "D1").exists()
 
 
 def test_mirrored_titles_get_their_language_kind_channel_and_poster_in_jellyfins_files(cat, tmp_path):

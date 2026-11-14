@@ -315,6 +315,21 @@ class Jellyfin:
         }
         return [i["Path"] for i in (self._call("GET", "/Items", params) or {}).get("Items", []) if i.get("Path")]
 
+    def kept_paths(self) -> list[str]:
+        """Where the user's favourited, watched and part-watched movies, shows and episodes are (the mirror's limit
+        keeps their titles)."""
+        out = []
+        for f in ("IsFavorite", "IsPlayed", "IsResumable"):
+            params = {
+                "userId": self.user(),
+                "Recursive": "true",
+                "Filters": f,
+                "IncludeItemTypes": "Movie,Series,Episode",
+                "Fields": "Path",
+            }
+            out += [i["Path"] for i in (self._call("GET", "/Items", params) or {}).get("Items", []) if i.get("Path")]
+        return out
+
     def set_favourite(self, item_id: str, on: bool) -> None:
         self._call("POST" if on else "DELETE", f"/UserFavoriteItems/{item_id}", {"userId": self.user()})
 

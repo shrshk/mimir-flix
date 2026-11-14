@@ -12,6 +12,7 @@ from urllib.parse import quote
 from mimir_flix.catalog import Catalog, CatalogError
 
 FOLLOWED = ".followed.json"  # shows added to Jellyfin (title: the show's page), checked for new episodes
+ADDED = ".added.json"  # movies added to Jellyfin by hand (folder names): the mirror's limit never removes them
 LIST_FOR = 6 * 3600  # how old a show's listing may be when it is written
 
 
@@ -88,6 +89,17 @@ def show_folder(root: Path, title: str, show_url: str, cat: Catalog) -> str:
     while not other or other.lower() in taken:  # no label, or that one is taken too
         other, n = safe(f"{title} ({n})"), n + 1
     return other
+
+
+def added(root: Path) -> list[str]:
+    f = root / ADDED
+    return json.loads(f.read_text()) if f.exists() else []
+
+
+def add(root: Path, name: str) -> None:
+    names = sorted(set(added(root)) | {name})
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ADDED).write_text(json.dumps(names, indent=1))
 
 
 def follow(root: Path, title: str, show_url: str) -> None:

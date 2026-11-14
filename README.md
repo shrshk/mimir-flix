@@ -88,6 +88,7 @@ Wholphin's own app settings (playback, theme) stay on each TV.
 | `providers` | (none) | Providers (IPTV, or a plugin's kind), added on the Settings page; their logins live in the vault, never here |
 | `backup_dir` | (off) | The folder for the nightly backup (3:30): mimir-flix's and Jellyfin's settings, lists and watch history |
 | `jellyfin_data` | `~/Library/Application Support/jellyfin` | Where this Mac's Jellyfin keeps its data (for the backup) |
+| `mirror_languages`, `mirror_per_category` | (all), `0` | The whole catalogue in Jellyfin keeps only these languages and the newest N titles per category; titles outside go to the Trash unless added by hand, watched or favourited |
 | `recs_avoid_genres`, `recs_languages` | (none) | Recommendations leave out these genres and keep only these original languages (`te`, `hi`, `en` …) |
 
 Secrets never go in settings.json: providers' logins are in the vault; the Jellyfin API key, TMDB token and ADB key

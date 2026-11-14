@@ -36,6 +36,11 @@ DEFAULTS = {
     # Wholphin's home rows (wholphin.py), written to the user's Jellyfin profile: {"languages": ["Telugu", "Hindi"],
     # "channels": ["…"]} (TV channels as studios); empty: Wholphin's own home is left alone.
     "wholphin_home": {},
+    # The whole catalogue in Jellyfin (a provider's "mirror": true), kept to these languages as the catalogue names
+    # them (e.g. ["Telugu", "Hindi"]; empty: every language) and the newest N titles of each category (0: all).
+    # Titles outside go to the Trash, unless added by hand, watched or favourited (mirror.py).
+    "mirror_languages": [],
+    "mirror_per_category": 0,
     # Recommendations everywhere (the page and an assistant) leave these out: genre names, and keep only these
     # original languages (codes like te, hi, en; empty: every language).
     # Providers (Settings adds them): [{"id", "name", "kind", …}]. kind is m3u or xtream (IPTV, with "server"?,

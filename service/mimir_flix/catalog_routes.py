@@ -24,7 +24,7 @@ from mimir_flix.catalog import Catalog, CatalogError, Catalogs, Served, node_id,
 from mimir_flix.hls import PASS, HlsError, HlsRelay, from_tailnet, is_hls, is_playlist
 from mimir_flix.jellyfin import Jellyfin, JellyfinError
 from mimir_flix.kodi import Kodi, KodiError
-from mimir_flix.strm import follow, followed, play_line, safe, show_folder, write_movie, write_show
+from mimir_flix.strm import add, follow, followed, play_line, safe, show_folder, write_movie, write_show
 from mimir_flix.tv import TvError
 from mimir_flix.watchlist import Watchlist
 
@@ -336,6 +336,7 @@ def router(
         library, root = libraries(entry)[which], roots(media_root, pid)[which]
         page = page_url(pid, cat, v.page) if v.page else ""
         target = write_movie(pid, v.url, v.title, root, resolver, page)
+        add(root, target.parent.name)  # kept when the whole catalogue is limited (mirror.prune)
         ensure_library(library, "movies" if which == "movies" else "homevideos", root)
         return {"id": hand_over(pid, library, target, v.tv)}
 
