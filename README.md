@@ -187,8 +187,8 @@ Mac's Tailscale address, and `lan.<domain>` at its LAN address so the TV (no Tai
 ```
 *.home.example.com {
 	tls { dns cloudflare {env.CLOUDFLARE_API_TOKEN} }
-	@flix host flix.home.example.com
-	handle @flix { reverse_proxy 127.0.0.1:8723 }
+	@tv host tv.home.example.com
+	handle @tv { reverse_proxy 127.0.0.1:8723 }
 	@jellyfin host jellyfin.home.example.com
 	handle @jellyfin { reverse_proxy 127.0.0.1:8096 }
 	@lan host lan.home.example.com
@@ -196,7 +196,7 @@ Mac's Tailscale address, and `lan.<domain>` at its LAN address so the TV (no Tai
 }
 ```
 
-Then `"resolver": "https://lan.home.example.com"` and `"hosts": ["flix.home.example.com"]`: the app answers only to
+Then `"resolver": "https://lan.home.example.com"` and `"hosts": ["tv.home.example.com"]`: the app answers only to
 addresses, `.local` and tailnet names, the resolver's name and the names in `hosts`. Caddy sets `X-Forwarded-For`, which the resolver uses
 to tell home from away. Without it, set `host` to `0.0.0.0` and use `http://<mac>.local:8723` on the home network.
 

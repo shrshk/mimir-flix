@@ -18,7 +18,7 @@ DEFAULTS = {
     "jellyfin_url": "http://127.0.0.1:8096",
     "media_root": "~/Documents/media",  # providers' .strm files: <id>/, <id>-movies/, <id>-live/
     # Names this app is reached by besides addresses, .local and tailnet names, e.g. the one Caddy serves it under
-    # ("flix.home.example.com"); the resolver's name counts too. Any other name is refused (DNS rebinding).
+    # ("tv.home.example.com"); the resolver's name counts too. Any other name is refused (DNS rebinding).
     "hosts": [],
     "resolver": "",  # where players reach the resolver (Jellyfin's .strm files); http://127.0.0.1:<port> if empty
     "resolver_port": 8724,

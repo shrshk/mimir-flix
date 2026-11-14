@@ -20,7 +20,7 @@ flowchart LR
     apps_tv["Netflix, Peacock, Prime Video …"]
   end
   subgraph mac["The home Mac"]
-    caddy["Caddy<br/>flix.home.&lt;domain&gt;<br/>lan.home.&lt;domain&gt;"]
+    caddy["Caddy<br/>tv.home.&lt;domain&gt;<br/>lan.home.&lt;domain&gt;"]
     app["mimir-tv app<br/>127.0.0.1:8723"]
     res["Resolver<br/>LAN listener :8724<br/>/play /hls /jf"]
     jf["Jellyfin :8096"]

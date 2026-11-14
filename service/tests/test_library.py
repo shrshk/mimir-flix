@@ -217,19 +217,19 @@ def test_a_device_on_the_wifi_cannot_look_through_the_mac_or_change_libraries(c,
 
 def test_only_its_own_names_and_its_own_pages_reach_it(jf, tmp_path):
     client = Jellyfin("http://jf", "key", transport=httpx.MockTransport(jf.handler))
-    app = create_app(client, tmp_path / "picks", hosts=["flix.example.com"])
+    app = create_app(client, tmp_path / "picks", hosts=["tv.example.com"])
     here = TestClient(app, client=("127.0.0.1", 5000))
-    for host in ("flix.example.com", "127.0.0.1:8723", "[::1]:8723", "localhost:8723", "mac.local", "mac.tail1.ts.net"):
+    for host in ("tv.example.com", "127.0.0.1:8723", "[::1]:8723", "localhost:8723", "mac.local", "mac.tail1.ts.net"):
         assert here.get("/api/libraries", headers={"Host": host}).status_code == 200, host
     # A web page that points its own name at this Mac (DNS rebinding) gets nothing.
     assert here.get("/api/libraries", headers={"Host": "evil.example.net"}).status_code == 421
     # Another site's page may not change anything, even from this Mac; this app's own pages and tools may.
-    other = {"Host": "flix.example.com", "Origin": "https://evil.example.net"}
+    other = {"Host": "tv.example.com", "Origin": "https://evil.example.net"}
     assert here.post("/api/scan", headers=other).status_code == 403 and jf.scans == []
-    assert here.post("/api/scan", headers={"Host": "flix.example.com", "Origin": "null"}).status_code == 403
-    assert here.post("/api/scan", headers={"Host": "flix.example.com", "Origin": "https://flix.example.com"}).status_code == 202
+    assert here.post("/api/scan", headers={"Host": "tv.example.com", "Origin": "null"}).status_code == 403
+    assert here.post("/api/scan", headers={"Host": "tv.example.com", "Origin": "https://tv.example.com"}).status_code == 202
     assert here.post("/api/scan", headers={"Host": "127.0.0.1:8723"}).status_code == 202  # no Origin: not a browser
-    page = here.get("/api/libraries", headers={"Host": "flix.example.com"})
+    page = here.get("/api/libraries", headers={"Host": "tv.example.com"})
     assert page.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in page.headers["content-security-policy"]
 
 

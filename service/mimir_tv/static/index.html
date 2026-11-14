@@ -520,8 +520,9 @@ window.tvBack = () => {
   return false;
 };
 
-// Jellyfin sits beside this app: flix.home.<domain> → jellyfin.home.<domain>, opened in Safari (or a new tab).
-const JF = location.hostname.startsWith("flix.") ? `https://jellyfin.${location.hostname.slice(5)}` : "";
+// Jellyfin sits beside this app: tv.home.<domain> (flix. before the rename) → jellyfin.home.<domain>, opened in
+// Safari (or a new tab).
+const JF = (m => m ? `https://jellyfin.${m[1]}` : "")(location.hostname.match(/^(?:tv|flix)\.(.+)$/));
 if (JF) { $("#jfl").href = `${JF}/web/`; $("#jfl").hidden = false; }
 // On the iPhone the header link opens the Swiftfin app itself (a bare swiftfin:// link opens it where it was).
 if (JF && /iPhone|iPad/.test(navigator.userAgent)) { $("#jfl").href = "swiftfin://"; $("#jfl").removeAttribute("target"); $("#jfl").textContent = "Swiftfin ↗"; }
