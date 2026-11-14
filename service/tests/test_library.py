@@ -65,6 +65,18 @@ class FakeJellyfin:
             if self.running is not None:
                 tasks[0] |= {"State": "Running", "CurrentProgressPercentage": self.running}
             return httpx.Response(200, json=tasks)
+        if path == "/Items" and q.get("SearchTerm"):  # Jellyfin's search: the shows a scan would find, by name
+            term = q["SearchTerm"].lower()
+            shows = [
+                d
+                for lib in self.libs.values()
+                if lib["CollectionType"] == "tvshows"
+                for r in lib["Locations"]
+                if Path(r).is_dir()
+                for d in Path(r).iterdir()
+                if d.is_dir() and term in d.name.lower()
+            ]
+            return httpx.Response(200, json={"Items": [{"Id": f"series:{d.name}", "Name": d.name, "Type": "Series"} for d in shows]})
         if path == "/Items" and q.get("Filters") in ("IsPlayed", "IsResumable"):
             return httpx.Response(200, json={"Items": [{"Path": x} for x in sorted(self.watched)]})
         if path == "/Items" and q.get("Filters") == "IsFavorite" and q.get("Fields") == "Path":  # favourited shows

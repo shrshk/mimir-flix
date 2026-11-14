@@ -24,6 +24,7 @@ from mimir_flix.catalog_routes import router
 from mimir_flix import hls as hls_mod
 from mimir_flix.hls import HlsError, HlsRelay, from_tailnet
 from mimir_flix.jellyfin import Jellyfin, JellyfinError
+from mimir_flix.jf_routes import router as jf_router
 from mimir_flix.kodi import Kodi
 from mimir_flix.mcp_server import router as mcp_router
 from mimir_flix.providers import Providers
@@ -547,7 +548,10 @@ def test_the_assistant_searches_plays_and_saves_a_providers_titles(home, cat, tm
     wl = Watchlist(tmp_path / "mimir-flix.db")
     routes = router(home, jellyfin, None, tmp_path / "media", "http://air:8724", tmp_path / "thumbs", watchlist=wl)
     connectors = {"providers": lambda: listing(home)}
-    a = create_app(jellyfin, tmp_path / "picks", routes, list_router(wl, dict), mcp_router("t"), connectors=connectors)
+    jf_routes = jf_router(jellyfin, None, "http://air:8724")
+    a = create_app(
+        jellyfin, tmp_path / "picks", routes, jf_routes, list_router(wl, dict), mcp_router("t"), connectors=connectors
+    )
     c = TestClient(a, client=("127.0.0.1", 5000))
 
     def tool(name, **args):
@@ -572,6 +576,9 @@ def test_the_assistant_searches_plays_and_saves_a_providers_titles(home, cat, tm
         "jellyfin_id": "series:Dark",
         "episodes": 3,
     }
+    # Now in Jellyfin, Dark comes back once: first, as the library's, and not again as the provider's.
+    again = tool("search", query="dark")
+    assert [i["jellyfin_id"] for i in again["library"]] == ["series:Dark"] and "providers" not in again
     live = tool("live_now", query="sports")
     assert [(s["provider"], s["title"]) for s in live] == [("tv1", "Sports 1")]
     played = tool("play_on_tv", provider="tv1", id=live[0]["id"], page=live[0]["page"], title="Sports 1")

@@ -355,7 +355,9 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
             one("/api/jf/search"), one("/api/streaming/search"), *[one(f"/api/p/{p['id']}/search") for p in found]
         )
         out: dict[str, Any] = {}
+        shown: set[str] = set()  # Jellyfin ids already in "library": a provider's copy of one is left out
         if isinstance(lib, list):
+            shown = {i["id"] for i in lib[:10]}
             out["library"] = [
                 {
                     "jellyfin_id": i["id"],
@@ -377,13 +379,15 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
                     {"title": i["title"], "sub": i["sub"], "id": i.get("node") or i["url"]}
                     | {"kind": "show" if i["kind"] == "folder" else "video"}
                     | ({"jellyfin_id": i["jf_id"]} if i["jf_id"] else {})
-                    for i in g["items"][:5]
-                ],
+                    for i in g["items"]
+                    if i["jf_id"] not in shown
+                ][:5],
             }
             for p, res in zip(found, mine)
             if isinstance(res, list)
             for g in res[:6]
         ]
+        groups = [g for g in groups if g["items"]]
         if groups:
             out["providers"] = groups
         failed = [n for n, r in (("library", lib), ("apps", apps)) if isinstance(r, ToolError)]

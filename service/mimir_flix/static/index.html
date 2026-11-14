@@ -932,17 +932,19 @@ $("#q").addEventListener("input", () => {
       const theirs = groups.flatMap(g => g.items);
       pool = [];
       let html = "";
-      // A provider's title already added to Jellyfin shows once: as its result (✓ Jellyfin, with + My list on its
-      // page), not again under Your videos.
-      const added = new Set(theirs.map(i => i.jf_id).filter(Boolean));
-      const mine = (got.mine || []).filter(m => !added.has(m.id));
-      const elsewhere = mergeStreaming(got.streams || [], mine.concat(theirs));
+      // Jellyfin first (Wholphin's library), the rest of the catalogue after it. A provider's title already in
+      // Jellyfin shows once, as its Jellyfin result; one Jellyfin's search missed joins them, under In Jellyfin.
+      const mine = got.mine || [];
+      const inJf = new Set(mine.map(m => m.id));
+      const late = groups.flatMap(g => g.items.filter(i => i.jf_id && !inJf.has(i.jf_id)).map(i => ({...i, src: g.src})));
+      for (const g of groups) g.items = g.items.filter(i => !i.jf_id);
+      const elsewhere = mergeStreaming(got.streams || [], mine.concat(late, theirs));
       // One grid of titles, best groups first, with a line of filters above it (a chip per group, with its count)
       // instead of a heading per group: a search over many lists ("telugu") leaves the screen to the titles.
       // Each poster says its section too: the same show is often in several, with different seasons.
       const sections = new Map();
       const add = (name, tiles) => tiles.length && sections.set(name, (sections.get(name) || []).concat(tiles));
-      add("Your videos", mine.map(m => tile(m)));
+      add("In Jellyfin", mine.map(m => tile(m)).concat(late.map(i => tile(i, i.sub))));
       add("On your apps", elsewhere.map(w => tile(w, w.year)));
       for (const g of groups) add(g.section, g.items.map(i => tile({...i, src: g.src}, [g.section, i.sub].filter(Boolean).join(" · "))));
       if (!sections.has(pick)) pick = "";
