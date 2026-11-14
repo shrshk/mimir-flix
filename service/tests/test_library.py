@@ -76,20 +76,12 @@ class FakeJellyfin:
                 for d in Path(r).iterdir()
                 if d.is_dir() and term in d.name.lower()
             ]
-            return httpx.Response(
-                200, json={"Items": [{"Id": f"series:{d.name}", "Name": d.name, "Type": "Series"} for d in shows]}
-            )
+            return httpx.Response(200, json={"Items": [{"Id": f"series:{d.name}", "Name": d.name, "Type": "Series"} for d in shows]})
         if path == "/Items" and q.get("Filters") in ("IsPlayed", "IsResumable"):
             return httpx.Response(200, json={"Items": [{"Path": x} for x in sorted(self.watched)]})
         if path == "/Items" and q.get("Filters") == "IsFavorite" and q.get("Fields") == "Path":  # favourited shows
-            shows = [
-                d
-                for lib in self.libs.values()
-                if lib["CollectionType"] == "tvshows"
-                for r in lib["Locations"]
-                for d in Path(r).iterdir()
-                if d.is_dir()
-            ]
+            shows = [d for lib in self.libs.values() if lib["CollectionType"] == "tvshows" for r in lib["Locations"]
+                     for d in Path(r).iterdir() if d.is_dir()]
             hits = [{"Id": f"series:{d.name}", "Path": str(d)} for d in shows if f"series:{d.name}" in self.favourites]
             return httpx.Response(200, json={"Items": hits})
         if path == "/Items" and q.get("Fields") == "Path":  # what a scan found: .strm files, and each show's folder
@@ -218,9 +210,7 @@ def test_a_device_on_the_wifi_cannot_look_through_the_mac_or_change_libraries(c,
     wifi = TestClient(c.app, client=("192.0.2.30", 5000))
     assert wifi.get("/api/browse", params={"path": str(drive)}).status_code == 403
     assert wifi.post("/api/libraries", json={"name": "Mine", "folders": [str(drive)]}).status_code == 403
-    assert (
-        wifi.post("/api/libraries/Movies/videos", json={"path": str(drive / "movies" / "one.mkv")}).status_code == 403
-    )
+    assert wifi.post("/api/libraries/Movies/videos", json={"path": str(drive / "movies" / "one.mkv")}).status_code == 403
     assert wifi.post("/api/scan").status_code == 403 and jf.scans == []
     assert wifi.get("/api/libraries").status_code == 200  # browsing what is shared stays open
 
@@ -237,16 +227,10 @@ def test_only_its_own_names_and_its_own_pages_reach_it(jf, tmp_path):
     other = {"Host": "tv.example.com", "Origin": "https://evil.example.net"}
     assert here.post("/api/scan", headers=other).status_code == 403 and jf.scans == []
     assert here.post("/api/scan", headers={"Host": "tv.example.com", "Origin": "null"}).status_code == 403
-    assert (
-        here.post("/api/scan", headers={"Host": "tv.example.com", "Origin": "https://tv.example.com"}).status_code
-        == 202
-    )
+    assert here.post("/api/scan", headers={"Host": "tv.example.com", "Origin": "https://tv.example.com"}).status_code == 202
     assert here.post("/api/scan", headers={"Host": "127.0.0.1:8723"}).status_code == 202  # no Origin: not a browser
     page = here.get("/api/libraries", headers={"Host": "tv.example.com"})
-    assert (
-        page.headers["x-frame-options"] == "DENY"
-        and "frame-ancestors 'none'" in page.headers["content-security-policy"]
-    )
+    assert page.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in page.headers["content-security-policy"]
 
 
 def test_the_page_version_changes_with_the_page(tmp_path, monkeypatch):
