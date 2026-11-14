@@ -350,6 +350,19 @@ class Jellyfin:
         ]
         return max(tvs, key=lambda x: x.get("LastActivityDate") or "", default=None)
 
+    def tv_playing(self) -> dict | None:
+        """The Jellyfin TV app's session while it plays something. Reading what plays needs no remote control: Wholphin
+        reports none while playing, so this asks for the user's sessions, not the ones it could command."""
+        me = self.user()
+        tvs = [
+            x
+            for x in self._call("GET", "/Sessions", {"ActiveWithinSeconds": "960"}) or []
+            if x.get("UserId") == me
+            and ("TV" in (x.get("Client") or "") or x.get("Client") == "Wholphin")
+            and x.get("NowPlayingItem")
+        ]
+        return max(tvs, key=lambda x: x.get("LastActivityDate") or "", default=None)
+
     def phone_session(self, since: str) -> dict | None:
         """Swiftfin (Jellyfin's iPhone app) active since `since` (UTC, ISO): the phone that just opened it. Swiftfin
         1.6+ takes play commands over its socket (supportsMediaControl, PlayNow)."""

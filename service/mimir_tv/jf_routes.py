@@ -172,7 +172,7 @@ def router(
     @api.get("/api/jf/now")
     def now_playing():
         """What the Jellyfin TV app is playing ({} when nothing, or the app is closed)."""
-        session = guard(jf.tv_session)
+        session = guard(jf.tv_playing)
         item = (session or {}).get("NowPlayingItem")
         if not item:
             return {}

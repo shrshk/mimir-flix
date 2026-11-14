@@ -164,6 +164,7 @@ def test_whats_on_tv_says_what_jellyfin_is_playing(tmp_path, monkeypatch):
         "RunTimeTicks": 42_000_000_000,
     }
     playing = dict(TV_APP) | {
+        "UserId": "u1",
         "NowPlayingItem": episode,
         "PlayState": {"IsPaused": True, "PositionTicks": 12_600_000_000},
     }

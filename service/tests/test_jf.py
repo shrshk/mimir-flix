@@ -157,8 +157,10 @@ def fake(request: httpx.Request) -> httpx.Response:
         eps = [ITEMS[EP1], ITEMS[EP2]]
         at = next(n for n, e in enumerate(eps) if e["Id"] == q["startItemId"])
         return httpx.Response(200, json={"Items": eps[at : at + int(q["limit"])]})
-    if p == "/Sessions":
-        assert q["ControllableByUserId"] == "u1"
+    if p == "/Sessions":  # like Jellyfin: asked for sessions a user can command, only those taking remote control
+        if "ControllableByUserId" in q:
+            assert q["ControllableByUserId"] == "u1"
+            return httpx.Response(200, json=[x for x in SESSIONS if x.get("SupportsRemoteControl")])
         return httpx.Response(200, json=SESSIONS)
     if p.startswith("/Sessions/") and "/Playing" in p:
         session = next(x for x in SESSIONS if x["Id"] == p.split("/")[2])
@@ -517,3 +519,27 @@ def test_a_movie_page_has_its_details_and_the_librarys_titles_like_it(tmp_path):
     assert other["more"] == [] and other["backdrop"] == "" and other["cast"] == []
     assert c.get("/api/jf/title", params={"id": "../Users"}).status_code == 422
     assert c.get("/api/jf/title", params={"id": "6" * 32}).status_code in (404, 502)
+
+
+def test_whats_playing_on_the_tv_includes_wholphin_which_takes_no_remote_control_while_it_plays(tmp_path, monkeypatch):
+    playing = {
+        "Id": "w",
+        "UserId": "u1",
+        "Client": "Wholphin",
+        "SupportsRemoteControl": False,
+        "NowPlayingItem": {
+            "Id": "e3",
+            "Name": "Episode 3",
+            "SeriesName": "Dark",
+            "IndexNumber": 3,
+            "ParentIndexNumber": 1,
+        },
+        "PlayState": {"IsPaused": False, "PositionTicks": 12 * 600_000_000},
+    }
+    someone_else = playing | {"Id": "x", "UserId": "u2", "NowPlayingItem": {"Id": "z", "Name": "Not ours"}}
+    monkeypatch.setattr("tests.test_jf.SESSIONS", [someone_else, playing])
+    _, c, _ = setup(tmp_path)
+    now = c.get("/api/jf/now").json()
+    assert (now["show"], now["episode"], now["minute"]) == ("Dark", "S01E03", 12)
+    monkeypatch.setattr("tests.test_jf.SESSIONS", [playing | {"NowPlayingItem": None}])
+    assert c.get("/api/jf/now").json() == {}
