@@ -21,6 +21,7 @@ class FakeJellyfin:
         }
         self.boxsets: dict[str, dict] = {"user": {"Name": "Mine", "kids": {"m2"}, "sort": None}}
         self.calls = 0
+        self.gone: set[str] = set()  # listed by a search a moment ago, removed by a scan since
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         q, path, m = request.url.params, request.url.path, request.method
@@ -40,10 +41,14 @@ class FakeJellyfin:
             return httpx.Response(200, json={"Items": [{"Id": i} for i in hits]})
         if path == "/Collections" and m == "POST":
             cid = f"c{len(self.boxsets)}"
+            if self.gone & set(ids):
+                return httpx.Response(400, text="Error processing request.")
             self.boxsets[cid] = {"Name": q["Name"], "kids": set(ids), "sort": None}
             return httpx.Response(200, json={"Id": cid})
         if path.startswith("/Collections/") and path.endswith("/Items"):
             self.calls += 1
+            if m == "POST" and self.gone & set(ids):
+                return httpx.Response(400, text="Error processing request.")  # Jellyfin refuses the whole call
             kids = self.boxsets[path.split("/")[2]]["kids"]
             kids.update(ids) if m == "POST" else kids.difference_update(ids)
             return httpx.Response(204)
@@ -81,3 +86,12 @@ def test_the_catalogue_is_grouped_by_language_then_kind_in_the_houses_order():
     grouping.group(jf, SHOWS, MOVIES, ["Telugu", "Hindi", "English"])
     assert fake.named("Telugu TV serials")["kids"] == {"s2"} and fake.named("Telugu web series")["kids"] == {"s1"}
     assert fake.calls - before == 4  # one add and one take-out in each of the two
+
+
+def test_a_title_gone_while_grouping_leaves_out_only_that_title():
+    fake = FakeJellyfin()
+    jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
+    fake.titles["s4"] = (SHOWS, "Series", {"Telugu", "Telugu · TV serial"})
+    fake.gone.add("s4")
+    grouping.group(jf, SHOWS, MOVIES, ["Telugu"])
+    assert fake.named("Telugu TV serials")["kids"] == {"s1"}

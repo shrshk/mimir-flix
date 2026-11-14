@@ -6,7 +6,7 @@ Membership comes from the tags mirror.py writes ("<language> · <kind>", and the
 what is new and takes out what left. Languages and their order come from Settings' wholphin_home. Only
 collections with these names are touched."""
 
-from mimir_flix.jellyfin import Jellyfin
+from mimir_flix.jellyfin import Jellyfin, JellyfinError
 
 KINDS = [("TV serial", "TV serials"), ("Web series", "web series")]
 BATCH = 50  # item ids per add or remove call (they go in the URL)
@@ -24,17 +24,29 @@ def _boxsets(jf: Jellyfin) -> dict[str, str]:
 
 def _sync(jf: Jellyfin, have: dict[str, str], name: str, want: set[str]) -> tuple[str, int]:
     """The collection called name holding exactly want (made when missing); returns its id and how many changed."""
-    if name not in have:
-        first = sorted(want)[:BATCH]
-        have[name] = jf._call("POST", "/Collections", {"Name": name, "Ids": ",".join(first)})["Id"]
+    if name not in have:  # made empty, then filled below, so a gone title cannot stop it being made
+        have[name] = jf._call("POST", "/Collections", {"Name": name})["Id"]
     cid = have[name]
     now = _ids(jf, ParentId=cid)
     add, drop = sorted(want - now), sorted(now - want)
+    added = 0
     for i in range(0, len(add), BATCH):
-        jf._call("POST", f"/Collections/{cid}/Items", {"Ids": ",".join(add[i : i + BATCH])})
+        batch = add[i : i + BATCH]
+        try:
+            jf._call("POST", f"/Collections/{cid}/Items", {"Ids": ",".join(batch)})
+            added += len(batch)
+        except JellyfinError:
+            # Jellyfin refuses the whole batch when one title is gone (a scan removing titles the mirror trimmed
+            # while this runs): one at a time, leaving out the gone ones; the next run sees the scan's result.
+            for one in batch:
+                try:
+                    jf._call("POST", f"/Collections/{cid}/Items", {"Ids": one})
+                    added += 1
+                except JellyfinError:
+                    pass
     for i in range(0, len(drop), BATCH):
         jf._call("DELETE", f"/Collections/{cid}/Items", {"Ids": ",".join(drop[i : i + BATCH])})
-    return cid, len(add) + len(drop)
+    return cid, added + len(drop)
 
 
 def _sort_as(jf: Jellyfin, cid: str, key: str) -> None:
