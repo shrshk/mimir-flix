@@ -2,7 +2,7 @@
 
 Your own streaming front end on top of Jellyfin: one place to explore and search your own videos, see which of
 your streaming apps has a title, and choose what Jellyfin shows. mimir-tv is the explorer; Jellyfin plays your
-videos (on the phone in Swiftfin or the browser, on the TV in the Jellyfin app) and keeps track of what was watched,
+videos (on the phone in Swiftfin, Streamyfin or the browser, on the TV in the Jellyfin app) and keeps track of what was watched,
 and a streaming title opens in its app.
 
 Providers are optional: live TV from IPTV (an M3U playlist or an Xtream Codes login, played by Jellyfin's Live TV),

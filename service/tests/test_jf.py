@@ -246,9 +246,15 @@ def test_passthrough_streams_ranges_and_keeps_the_key_on_the_server(tmp_path):
         assert r.status_code == 404 and b"admin-key" not in r.content, up
 
 
-def test_ids_for_swiftfin_links(tmp_path):
+def test_the_iphones_jellyfin_app_and_ids_for_its_links(tmp_path):
     _, c, _ = setup(tmp_path)
-    assert c.get("/api/jf/app").json() == {"server": "srv1", "user": "u1"}  # the administrator, not the first user
+    # Swiftfin unless Settings say otherwise; its links need the server and the administrator (not the first user).
+    assert c.get("/api/jf/app").json() == {"server": "srv1", "user": "u1", "app": "swiftfin"}
+    jf = Jellyfin("http://jf", "secret-key", transport=httpx.MockTransport(fake))
+    streamy = TestClient(
+        create_app(jf, tmp_path / "p2", router(jf, None, "https://lan.example", phone_app=lambda: "streamyfin"))
+    )
+    assert streamy.get("/api/jf/app", headers={"Host": "127.0.0.1"}).json()["app"] == "streamyfin"
 
 
 def test_tv_plays_in_jellyfins_tv_app_not_the_phone(tmp_path, monkeypatch):

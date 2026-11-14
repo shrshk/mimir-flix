@@ -400,7 +400,16 @@ def main() -> None:
     # My list, for every house: streaming titles, library titles and providers' shows and videos.
     watchlist = Watchlist(data / "mimir-tv.db")
     routers = [
-        jf_router(jf, kodi, resolver, open_app, watchlist, hidden=lambda: hidden_libraries(catalogs), play_app=play_app)
+        jf_router(
+            jf,
+            kodi,
+            resolver,
+            open_app,
+            watchlist,
+            hidden=lambda: hidden_libraries(catalogs),
+            play_app=play_app,
+            phone_app=lambda: settings.load(config)["phone_app"],
+        )
     ]
     # Where titles stream, filtered to the house's apps: TMDB, with its API Read Access Token (from your password manager) in
     # this file. Without it, search shows only Jellyfin (and the providers).

@@ -199,6 +199,11 @@ def test_settings_change_after_setup_from_the_mac_or_the_tailnet_only_and_never_
     dup = {"tvs": [{"host": "192.0.2.25"}, {"host": "192.0.2.25"}]}
     assert phone.put("/api/settings/tvs", json=dup).status_code == 422
     assert phone.put("/api/settings/streaming", json={"token": "tmdb-secret", "apps": "netflix"}).status_code == 200
+    # The iPhones' Jellyfin app: saved with the Phones card; one Settings does not know is refused.
+    assert phone.put("/api/settings/phones", json={"direct": True, "phone_app": "streamyfin"}).status_code == 200
+    assert json.loads((config / "settings.json").read_text())["phone_app"] == "streamyfin"
+    assert phone.put("/api/settings/phones", json={"phone_app": "infuse"}).status_code == 422
+    assert phone.get("/api/settings").json()["phone_app"] == "streamyfin"
 
     shown = c.get("/api/settings").json()
     assert [t["name"] for t in shown["tvs"]] == ["Living room", "Bedroom"] and shown["tv_host"] == "192.0.2.25"

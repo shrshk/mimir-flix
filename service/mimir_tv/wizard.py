@@ -121,6 +121,7 @@ class PhonesStep(BaseModel):
     direct: bool = False
     resolver: str = ""
     tailnet: bool = False  # phones through Tailscale (https on this Mac's Tailscale name)
+    phone_app: Literal["swiftfin", "streamyfin"] | None = None  # the iPhones' Jellyfin app (None: as it was)
 
 
 class Tailnet(BaseModel):
@@ -302,7 +303,8 @@ def router(
     def save_phones(body: PhonesStep) -> None:
         if body.resolver and not body.resolver.startswith(("http://", "https://")):
             raise HTTPException(422, "The address starts with http:// or https://")
-        settings.save({"host": "0.0.0.0" if body.direct else "127.0.0.1", "resolver": body.resolver}, config)
+        changes = {"host": "0.0.0.0" if body.direct else "127.0.0.1", "resolver": body.resolver}
+        settings.save(changes | ({"phone_app": body.phone_app} if body.phone_app else {}), config)
         if body.tailnet:
             tailnet_on(True)
 
@@ -458,6 +460,7 @@ def router(
             "backup_dir": cfg["backup_dir"],
             "backups": backups,
             "backups_error": why,  # a drive that does not answer: said here, never waited on
+            "phone_app": cfg["phone_app"],
             "recs_avoid_genres": cfg["recs_avoid_genres"],
             "recs_languages": cfg["recs_languages"],
         }

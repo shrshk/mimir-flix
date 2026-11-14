@@ -26,6 +26,7 @@ DEFAULTS = {
     # (📺 TV opens Jellyfin there over ADB; pair each once on the Settings page). tv_host is the older one-TV form,
     # read as the first TV.
     "tvs": [],
+    "phone_app": "swiftfin",  # the Jellyfin app on the house's iPhones: swiftfin or streamyfin (▶ Jellyfin opens it)
     "tv_host": "",
     "kodi_url": "",  # e.g. http://192.168.1.20:8080 (Kodi on the TV), with its password in kodi_password_file
     "kodi_password_file": "",  # "vault:kodi" (Settings saves it there) or an owner-only file

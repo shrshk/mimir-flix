@@ -125,7 +125,8 @@ const CARDS = [
       (with no domain of your own, tick "on the home network" below so it can).</p>
     <p class="mute">Where phones and the TV's Jellyfin open a provider's links (https when Jellyfin is on an https page).</p>
     <label>Resolver address<input type="url" name="resolver" value="${esc(c.resolver)}"></label>
-    <label class="row"><input type="checkbox" name="direct" ${c.direct ? "checked" : ""}> mimir-tv listens on the home network too (http, for the TV)</label>`},
+    <label class="row"><input type="checkbox" name="direct" ${c.direct ? "checked" : ""}> mimir-tv listens on the home network too (http, for the TV)</label>
+    <label>Jellyfin app on the iPhones (▶ Jellyfin opens it)<select name="phone_app">${[["swiftfin", "Swiftfin"], ["streamyfin", "Streamyfin"]].map(([k, n]) => `<option value="${k}" ${c.phone_app === k ? "selected" : ""}>${n}</option>`).join("")}</select></label>`},
 ];
 
 function tvRow(t) {
@@ -264,7 +265,7 @@ function bind() {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(f));
       let body = data;
-      if (card === "phones") body = {resolver: data.resolver, direct: !!data.direct};
+      if (card === "phones") body = {resolver: data.resolver, direct: !!data.direct, phone_app: data.phone_app};
       if (card === "streaming") body = {token: data.token, region: data.region,
         apps: [...f.querySelectorAll("[name=app]:checked")].map(x => x.value).join(",")};
       if (card === "into") body = intoBody(f);

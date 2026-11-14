@@ -524,8 +524,13 @@ window.tvBack = () => {
 // Safari (or a new tab).
 const JF = (m => m ? `https://jellyfin.${m[1]}` : "")(location.hostname.match(/^(?:tv|flix)\.(.+)$/));
 if (JF) { $("#jfl").href = `${JF}/web/`; $("#jfl").hidden = false; }
-// On the iPhone the header link opens the Swiftfin app itself (a bare swiftfin:// link opens it where it was).
-if (JF && /iPhone|iPad/.test(navigator.userAgent)) { $("#jfl").href = "swiftfin://"; $("#jfl").removeAttribute("target"); $("#jfl").textContent = "Swiftfin ↗"; }
+// On the iPhone the header link opens the house's Jellyfin app itself (Settings: Swiftfin or Streamyfin; a bare
+// swiftfin:// or streamyfin:// link opens it where it was), once /api/jf/app says which.
+const APP_NAMES = {swiftfin: "Swiftfin", streamyfin: "Streamyfin"};
+function headerApp(app) {
+  if (!JF || !APP_NAMES[app]) return;
+  $("#jfl").href = `${app}://`; $("#jfl").removeAttribute("target"); $("#jfl").textContent = `${APP_NAMES[app]} ↗`;
+}
 
 // id: a link to the title in Jellyfin; play: the link plays it (an episode or a video), not only opens it (a show).
 function toast(msg, id, play) {
@@ -550,17 +555,22 @@ function tile(i, sub) {
 }
 
 // How a video plays: Jellyfin first (its web app here, its TV app on the TV); playing here and Kodi are the others.
-// On the iPhone, ▶ Jellyfin opens the item in the Swiftfin app (its swiftfin:// links; Swiftfin must be installed and
-// signed in to this server) and "web" opens Safari. Elsewhere it opens Jellyfin in a browser tab.
+// On the iPhone, ▶ Jellyfin opens the item in the house's Jellyfin app (installed and signed in to this server):
+// Streamyfin plays it from its own link (streamyfin://topshelf/play; topshelf/item opens a show's page), Swiftfin's
+// links only open the item, so the Air then tells Swiftfin to play it. "web" opens Safari. Elsewhere it opens Jellyfin
+// in a browser tab.
 const jfLink = id => `${JF}/web/#/details?id=${id}`;
 const IOS = /iPhone|iPad/.test(navigator.userAgent);
 let appIds = null;
-if (IOS) api("/api/jf/app").then(r => appIds = r).catch(() => {});
-const appLink = id => appIds ? `swiftfin://${appIds.server}/${appIds.user}/item/${id}` : jfLink(id);
+if (IOS) api("/api/jf/app").then(r => { appIds = r; headerApp(r.app); }).catch(() => {});
+const streamy = () => appIds?.app === "streamyfin";
+const appLink = (id, play) => !appIds ? jfLink(id)
+  : streamy() ? `streamyfin://topshelf/${play ? "play" : "item"}?id=${encodeURIComponent(id)}`
+  : `swiftfin://${appIds.server}/${appIds.user}/item/${id}`;
 // play: a video; Swiftfin's links only open its page, so the Air also tells the app to play it (Jellyfin's remote
 // control, as for the TV app), once the app has come up. keepalive: the request survives the switch to Swiftfin.
 const jfOpen = (id, label, play) => appIds
-  ? `<a class="btn" href="${appLink(id)}"${play ? ` onclick="playInApp('${id}')"` : ""}>${label}</a><a class="alt" href="${jfLink(id)}" target="_blank">web</a>`
+  ? `<a class="btn" href="${appLink(id, play)}"${play && !streamy() ? ` onclick="playInApp('${id}')"` : ""}>${label}</a><a class="alt" href="${jfLink(id)}" target="_blank">web</a>`
   : `<a class="btn" href="${jfLink(id)}" target="_blank">${label}</a>`;
 function playInApp(id) {
   fetch("/api/jf/phone", {method: "POST", keepalive: true, headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})}).catch(() => {});

@@ -105,6 +105,7 @@ def router(
     watchlist: Watchlist | None = None,
     hidden: Callable[[], set[str]] = set,
     play_app=None,
+    phone_app: Callable[[], str] = lambda: "swiftfin",
 ) -> APIRouter:
     """hidden: the providers' own libraries, shown in each provider's section instead of Your library."""
     api = APIRouter()
@@ -216,7 +217,8 @@ def router(
 
     @api.get("/api/jf/app")
     def app_ids():
-        return guard(jf.app_ids)
+        """What the iPhone's Jellyfin app needs to open an item: the app (Settings: phone_app), and Swiftfin's ids."""
+        return guard(jf.app_ids) | {"app": phone_app()}
 
     @api.get("/api/jf/resume/{id}")
     def resume_at(id: str = Path(pattern=ID)):
