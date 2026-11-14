@@ -4,12 +4,12 @@ import time
 import httpx
 from fastapi.testclient import TestClient
 
-from mimir_flix.app import create_app
-from mimir_flix.jellyfin import Jellyfin
-from mimir_flix.jf_routes import router
-from mimir_flix.kodi import Kodi
-from mimir_flix.watchlist import Watchlist
-from mimir_flix.resolver import start_resolver
+from mimir_tv.app import create_app
+from mimir_tv.jellyfin import Jellyfin
+from mimir_tv.jf_routes import router
+from mimir_tv.kodi import Kodi
+from mimir_tv.watchlist import Watchlist
+from mimir_tv.resolver import start_resolver
 
 MOVIE = "a" * 32
 WEDDING = "b" * 32
@@ -255,7 +255,7 @@ def test_tv_plays_in_jellyfins_tv_app_not_the_phone(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.test_jf.SESSIONS", [PHONE_APP, dict(TV_APP)])
     monkeypatch.setattr("tests.test_jf.PLAYED", [])
     slept = []
-    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", slept.append)
+    monkeypatch.setattr("mimir_tv.jellyfin.time.sleep", slept.append)
     _, c, sent = setup(tmp_path)
     assert c.post("/api/jf/tv", json={"id": MOVIE}).json() == {"playing": "Wedding Film 4K"}
     assert slept == []  # the app was already open: no waiting
@@ -275,7 +275,7 @@ def test_tv_plays_in_wholphin_the_jellyfin_tv_app_in_use(tmp_path, monkeypatch):
 def test_tv_switches_from_what_it_is_playing_in_one_press(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.test_jf.SESSIONS", [TV_APP | {"NowPlayingItem": {"Id": CLIP}}])
     monkeypatch.setattr("tests.test_jf.PLAYED", [])
-    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", lambda s: None)
+    monkeypatch.setattr("mimir_tv.jellyfin.time.sleep", lambda s: None)
     _, c, _ = setup(tmp_path)
     assert c.post("/api/jf/tv", json={"id": MOVIE}).status_code == 200
     assert SESSIONS[0]["NowPlayingItem"] == {"Id": MOVIE}
@@ -293,7 +293,7 @@ def test_tv_opens_the_jellyfin_app_when_it_is_closed_and_waits_for_it(tmp_path, 
     jf = Jellyfin("http://jf", "secret-key", transport=httpx.MockTransport(fake))
     c = TestClient(create_app(jf, tmp_path / "picks", router(jf, None, "https://lan.example", open_app)))
     slept = []
-    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", slept.append)
+    monkeypatch.setattr("mimir_tv.jellyfin.time.sleep", slept.append)
     assert c.post("/api/jf/tv", json={"id": MOVIE}).json() == {"playing": "Wedding Film 4K"}
     assert opened == [1] and [p[0] for p in PLAYED] == ["tv"]
     # The app connects before it is ready to play ("no playable items"): a moment to settle before the command.
@@ -316,7 +316,7 @@ def test_tv_brings_the_app_forward_when_it_was_left_in_the_background(tmp_path, 
     jf = Jellyfin("http://jf", "secret-key", transport=httpx.MockTransport(fake))
     c = TestClient(create_app(jf, tmp_path / "picks", router(jf, None, "https://lan.example", open_app)))
     slept = []
-    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", slept.append)
+    monkeypatch.setattr("mimir_tv.jellyfin.time.sleep", slept.append)
     assert c.post("/api/jf/tv", json={"id": MOVIE}).status_code == 200
     assert calls == [1] and slept and slept[-1] >= 2 and [p[0] for p in PLAYED] == ["tv"]
     slept.clear()
@@ -339,7 +339,7 @@ def test_tv_plays_in_wholphin_by_its_intent_from_where_it_was_left(tmp_path, mon
     c = TestClient(
         create_app(jf, tmp_path / "picks", router(jf, None, "https://lan.example", lambda: False, play_app=play_app))
     )
-    monkeypatch.setattr("mimir_flix.jellyfin.time.sleep", lambda s: None)
+    monkeypatch.setattr("mimir_tv.jellyfin.time.sleep", lambda s: None)
     assert c.post("/api/jf/tv", json={"id": MOVIE}).json() == {"playing": "Wedding Film 4K"}
     assert started == [(MOVIE, 270_000)] and PLAYED == []  # 4 min 30 s in, and no remote command
     installed[0] = False  # no Wholphin: Jellyfin's own app gets the remote command
@@ -365,7 +365,7 @@ def test_jellyfin_on_the_iphone_starts_playing_in_swiftfin(tmp_path, monkeypatch
     now = time.strftime("%Y-%m-%dT%H:%M:%S.0000000Z", time.gmtime())
     slept = []
     monkeypatch.setattr(
-        "mimir_flix.jellyfin.time.sleep",
+        "mimir_tv.jellyfin.time.sleep",
         lambda s: slept.append(s) or sessions.append(swiftfin | {"LastActivityDate": now}),
     )
     _, c, _ = setup(tmp_path)
@@ -442,7 +442,7 @@ def test_my_list_titles_in_the_library_are_jellyfin_favourites(tmp_path):
     assert c.post("/api/jf/list", json={"id": MOVIE}).json() == {"added": [], "already": ["Wedding Film 4K"]}
     listed = c.get("/api/jf/list").json()
     assert [(i["title"], i["id"], i["kind"]) for i in listed] == [("Wedding Film 4K", MOVIE, "video")]
-    assert listed[0]["thumb"].startswith("/jf/Items/")  # shown and played through mimir-flix, as anywhere else
+    assert listed[0]["thumb"].startswith("/jf/Items/")  # shown and played through mimir-tv, as anywhere else
     USER_DATA[EP1] = {"IsFavorite": True}  # made a favourite in a Jellyfin app: on My list too
     assert {i["id"] for i in c.get("/api/jf/list").json()} == {MOVIE, EP1}
     assert c.delete("/api/jf/list", params={"id": MOVIE}).status_code == 204
@@ -459,7 +459,7 @@ def test_library_titles_on_the_old_list_become_favourites_once(tmp_path):
     old.add_title({"tmdb": "movie/1", "title": "Streaming", "year": "2020"})
     assert [i["id"] for i in c.get("/api/jf/list").json()] == [CLIP]
     assert USER_DATA[CLIP]["IsFavorite"]
-    assert [i["url"] for i in old.items()] == ["tmdb:movie/1"]  # the other kinds stay on mimir-flix's list
+    assert [i["url"] for i in old.items()] == ["tmdb:movie/1"]  # the other kinds stay on mimir-tv's list
 
 
 def test_play_here_keeps_jellyfins_place_and_played_state(tmp_path):

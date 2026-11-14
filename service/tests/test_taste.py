@@ -5,15 +5,15 @@ import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix.jellyfin import Jellyfin
-from mimir_flix.mcp_server import router as mcp_router
-from mimir_flix.recs import Recs
-from mimir_flix.recs import router as recs_router
-from mimir_flix.streaming import Streaming, pick
-from mimir_flix.taste import Taste
-from mimir_flix.taste import router as taste_router
-from mimir_flix.watchlist import Watchlist
-from mimir_flix.watchlist import router as list_router
+from mimir_tv.jellyfin import Jellyfin
+from mimir_tv.mcp_server import router as mcp_router
+from mimir_tv.recs import Recs
+from mimir_tv.recs import router as recs_router
+from mimir_tv.streaming import Streaming, pick
+from mimir_tv.taste import Taste
+from mimir_tv.taste import router as taste_router
+from mimir_tv.watchlist import Watchlist
+from mimir_tv.watchlist import router as list_router
 
 
 def hit(i, title, lang, genres, votes=500):

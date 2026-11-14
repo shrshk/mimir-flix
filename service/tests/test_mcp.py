@@ -4,13 +4,13 @@ import time
 import httpx
 from fastapi.testclient import TestClient
 
-from mimir_flix.app import create_app, mcp_token
-from mimir_flix.jellyfin import Jellyfin
-from mimir_flix.jf_routes import router as jf_router
-from mimir_flix.mcp_server import router
-from mimir_flix.streaming import Streaming, pick
-from mimir_flix.streaming import router as streaming_router
-from mimir_flix.tv import Tv, TvError
+from mimir_tv.app import create_app, mcp_token
+from mimir_tv.jellyfin import Jellyfin
+from mimir_tv.jf_routes import router as jf_router
+from mimir_tv.mcp_server import router
+from mimir_tv.streaming import Streaming, pick
+from mimir_tv.streaming import router as streaming_router
+from mimir_tv.tv import Tv, TvError
 from tests.test_jf import MOVIE, TV_APP, fake
 from tests.test_streaming import FakeTmdb
 

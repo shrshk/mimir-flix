@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-from mimir_flix import onapps
-from mimir_flix.jellyfin import Jellyfin
+from mimir_tv import onapps
+from mimir_tv.jellyfin import Jellyfin
 
 
 class FakeStreaming:
@@ -102,7 +102,7 @@ class FakeJellyfin:
         return httpx.Response(404)
 
 
-def test_mimir_flixs_app_rows_become_playlists_with_the_same_titles_in_the_same_order(tmp_path):
+def test_mimir_tvs_app_rows_become_playlists_with_the_same_titles_in_the_same_order(tmp_path):
     root = tmp_path / "apps"
     lupin, heat, up = (
         item("Lupin", "tv/1", ["Netflix"], "show"),
@@ -120,7 +120,7 @@ def test_mimir_flixs_app_rows_become_playlists_with_the_same_titles_in_the_same_
     assert onapps.playlists(s, jf, root) == 3
     assert fake.lists == {
         "Trending on your apps": ["id-Up (2025)", "id-Lupin (2025)"],
-        "Popular on Netflix": ["id-Heat (2025)", "id-Lupin (2025)"],  # mimir-flix's order, not Jellyfin's
+        "Popular on Netflix": ["id-Heat (2025)", "id-Lupin (2025)"],  # mimir-tv's order, not Jellyfin's
         "Popular on Peacock": ["id-Up (2025)"],
     }
     writes = fake.writes

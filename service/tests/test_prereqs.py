@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from jobkit import prereqs as shared
 
-from mimir_flix import prereqs
+from mimir_tv import prereqs
 
 
 def setup(monkeypatch, have: set[str]):

@@ -316,7 +316,7 @@ version = "0.1.0"
 source = { git = "https://github.com/shrshk/jobkit#df9e1218140c27a8e7d4766b89c0def1422371c4" }
 
 [[package]]
-name = "mimir-flix"
+name = "mimir-tv"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

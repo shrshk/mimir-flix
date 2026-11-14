@@ -18,7 +18,7 @@
     }
   ],
   "kodi_url": "http://192.168.1.20:8080",
-  "kodi_password_file": "~/.config/mimir-flix/kodi-password",
+  "kodi_password_file": "~/.config/mimir-tv/kodi-password",
   "streaming_apps": "netflix,prime,peacock,youtube",
   "wholphin_home": {"languages": ["Telugu", "Hindi", "English"], "channels": []},
   "streaming_region": "US"

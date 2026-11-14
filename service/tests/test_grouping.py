@@ -4,8 +4,8 @@ import json
 
 import httpx
 
-from mimir_flix import grouping
-from mimir_flix.jellyfin import Jellyfin
+from mimir_tv import grouping
+from mimir_tv.jellyfin import Jellyfin
 
 SHOWS, MOVIES = "lib-shows", "lib-movies"
 

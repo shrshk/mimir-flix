@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from mimir_flix import backup
+from mimir_tv import backup
 
 
 def make_db(path, rows):
@@ -21,7 +21,7 @@ def make_db(path, rows):
 def test_a_backup_keeps_lists_settings_and_watch_history_never_artwork_or_secrets(tmp_path):
     data, config, jf, dest = tmp_path / "data", tmp_path / "config", tmp_path / "jellyfin", tmp_path / "backups"
     dest.mkdir()
-    open_db = make_db(data / "mimir-flix.db", ["My list: Tandel"])
+    open_db = make_db(data / "mimir-tv.db", ["My list: Tandel"])
     make_db(jf / "data" / "jellyfin.db", ["played: Dark S1E3"])
     config.mkdir()
     (config / "settings.json").write_text('{"tv_host": "192.0.2.25"}')
@@ -33,19 +33,19 @@ def test_a_backup_keeps_lists_settings_and_watch_history_never_artwork_or_secret
     (jf / "metadata" / "library" / "poster.jpg").write_bytes(b"\xff" * 100)
 
     out = backup.back_up(data, config, jf, dest, today=date(2026, 11, 2))
-    assert out.name == "mimir-flix-2026-11-02.tar.gz"
+    assert out.name == "mimir-tv-2026-11-02.tar.gz"
     with tarfile.open(out) as tar:
         names = set(tar.getnames())
         tar.extractall(tmp_path / "x", filter="data")
     assert {
-        "mimir-flix/mimir-flix.db",
-        "mimir-flix/settings.json",
+        "mimir-tv/mimir-tv.db",
+        "mimir-tv/settings.json",
         "jellyfin/data/jellyfin.db",
         "jellyfin/config/system.xml",
     } <= names
     assert not any("metadata" in n or "SECRET" in n for n in names)
     assert not any(n.endswith(s) for n in names for s in ("adbkey", "mcp-token", "vault-key", "api-key"))
-    restored = sqlite3.connect(tmp_path / "x" / "mimir-flix" / "mimir-flix.db")
+    restored = sqlite3.connect(tmp_path / "x" / "mimir-tv" / "mimir-tv.db")
     assert restored.execute("SELECT v FROM t").fetchall() == [("My list: Tandel",)]  # consistent while open
     played = sqlite3.connect(tmp_path / "x" / "jellyfin" / "data" / "jellyfin.db")
     assert played.execute("SELECT v FROM t").fetchall() == [("played: Dark S1E3",)]
@@ -55,11 +55,11 @@ def test_a_backup_keeps_lists_settings_and_watch_history_never_artwork_or_secret
 def test_the_newest_seven_are_kept_and_a_missing_drive_is_said_plainly(tmp_path):
     data, dest = tmp_path / "data", tmp_path / "backups"
     dest.mkdir()
-    make_db(data / "mimir-flix.db", ["x"]).close()
+    make_db(data / "mimir-tv.db", ["x"]).close()
     for day in range(1, 10):
         backup.back_up(data, tmp_path / "config", None, dest, today=date(2026, 11, day))
-    assert [b["name"] for b in backup.listed(dest)][0] == "mimir-flix-2026-11-09.tar.gz"
-    assert len(backup.listed(dest)) == 7 and not (dest / "mimir-flix-2026-11-02.tar.gz").exists()
+    assert [b["name"] for b in backup.listed(dest)][0] == "mimir-tv-2026-11-09.tar.gz"
+    assert len(backup.listed(dest)) == 7 and not (dest / "mimir-tv-2026-11-02.tar.gz").exists()
     assert all(f.stat().st_mode & 0o077 == 0 for f in dest.iterdir())  # owner-only: Jellyfin's sign-ins are inside
     with pytest.raises(backup.BackupError, match="drive connected"):
         backup.back_up(data, tmp_path / "config", None, tmp_path / "unplugged")
@@ -98,7 +98,7 @@ esac
 def nightly_jobs(tmp_path, monkeypatch, backup_dir):
     from jobkit import Jobs
 
-    from mimir_flix.app import start_backups
+    from mimir_tv.app import start_backups
 
     rclone = tmp_path / "rclone"
     rclone.write_text(FAKE_RCLONE)
@@ -108,11 +108,11 @@ def nightly_jobs(tmp_path, monkeypatch, backup_dir):
     monkeypatch.setattr("jobkit.backup.LOCK_DIR", tmp_path / "locks")
     config, data = tmp_path / "config", tmp_path / "data"
     config.mkdir()
-    make_db(data / "mimir-flix.db", ["x"]).close()
+    make_db(data / "mimir-tv.db", ["x"]).close()
     (config / "settings.json").write_text(
-        f'{{"backup_dir": "{backup_dir}", "offsite": "backup:mimir-flix", "rclone": "{rclone}"}}'
+        f'{{"backup_dir": "{backup_dir}", "offsite": "backup:mimir-tv", "rclone": "{rclone}"}}'
     )
-    jobs = Jobs(tmp_path / "jobs.db", app="mimir-flix")
+    jobs = Jobs(tmp_path / "jobs.db", app="mimir-tv")
     start_backups(jobs, data, config)
     jobs.actions[backup.JOB]()
     return {j["name"]: j["last"] for j in jobs.report()}

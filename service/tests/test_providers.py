@@ -7,10 +7,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix.jellyfin import Jellyfin
-from mimir_flix.providers import Providers, router
-from mimir_flix.vault import Vault, VaultError
-from mimir_flix.wizard import allowed
+from mimir_tv.jellyfin import Jellyfin
+from mimir_tv.providers import Providers, router
+from mimir_tv.vault import Vault, VaultError
+from mimir_tv.wizard import allowed
 
 PLAYLIST = """#EXTM3U url-tvg="http://tv.example/xmltv.php?username=me&password=s3cret"
 #EXTINF:-1 tvg-id="star.in" group-title="India",Star Maa
@@ -40,7 +40,7 @@ def test_a_vault_with_secrets_makes_no_new_key_when_the_keychain_cannot_be_read(
     def security(args, **kw):  # the Keychain CLI over SSH: the login Keychain is locked, nothing found or added
         return subprocess.CompletedProcess(args, 36, "", "User interaction is not allowed.")
 
-    monkeypatch.setattr("mimir_flix.vault.subprocess.run", security)
+    monkeypatch.setattr("mimir_tv.vault.subprocess.run", security)
     config, db = tmp_path / "config", tmp_path / "m.db"
     Vault(db, lambda: b"k" * 32).put("kodi", {"password": "pw"})  # made in the login session, with the Keychain's key
     with pytest.raises(VaultError, match="Keychain"):
@@ -100,7 +100,7 @@ def setup(tmp_path):
     return here, fake, vault, config
 
 
-def test_an_xtream_provider_plays_through_jellyfin_and_its_login_stays_in_mimir_flix(tmp_path):
+def test_an_xtream_provider_plays_through_jellyfin_and_its_login_stays_in_mimir_tv(tmp_path):
     c, fake, vault, config = setup(tmp_path)
     xtream = {"name": "Home IPTV", "kind": "xtream", "server": "http://tv.example", "user": "me", "password": "nope"}
     assert c.post("/api/settings/providers", json=xtream).json()["detail"] == "the provider refused the login"
@@ -109,7 +109,7 @@ def test_an_xtream_provider_plays_through_jellyfin_and_its_login_stays_in_mimir_
     pid = added["id"]
     assert added["channels"] == 2 and fake.refreshed == 1
 
-    # Jellyfin is given mimir-flix's own addresses, never the provider's.
+    # Jellyfin is given mimir-tv's own addresses, never the provider's.
     assert fake.tuners["t1"]["Url"] == f"http://127.0.0.1:8723/iptv/{pid}/playlist.m3u"
     assert fake.listings["l1"]["Path"] == f"http://127.0.0.1:8723/iptv/{pid}/guide.xml"
     ours = c.get(f"/iptv/{pid}/playlist.m3u").text

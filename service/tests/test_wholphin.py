@@ -5,8 +5,8 @@ import json
 
 import httpx
 
-from mimir_flix import wholphin
-from mimir_flix.jellyfin import Jellyfin
+from mimir_tv import wholphin
+from mimir_tv.jellyfin import Jellyfin
 
 SHOWS, MOVIES = "lib-shows", "lib-movies"
 TITLES = [  # (library, type, tags)
@@ -94,7 +94,7 @@ def test_wholphins_home_is_laid_out_by_language_and_kind_in_the_users_order():
     serials = saved["rows"][3]["filter"]
     assert serials["tags"] == ["Telugu · TV serial"] and serials["parentId"] == SHOWS
     assert serials["includeItemTypes"] == ["Series"] and serials["sortBy"] == ["DateCreated"]
-    # The apps' rows are mimir-flix's own lists: trending first, then each app (Peacock has none: no row).
+    # The apps' rows are mimir-tv's own lists: trending first, then each app (Peacock has none: no row).
     assert saved["rows"][1] == {"type": "ByParent", "parentId": "pl-trend", "recursive": False}
     assert saved["rows"][8]["filter"]["studioIds"] == ["st1"]
 

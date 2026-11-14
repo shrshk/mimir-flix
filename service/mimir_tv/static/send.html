@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>Send to TV</title>
+<style>
+  :root { --bg:#000; --card:#181818; --ink:#f5f5f5; --mute:#a3a3a3; --line:#2a2a2a; --accent:#e50914; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, system-ui, sans-serif;
+         padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px); }
+  header { display:flex; align-items:center; gap:12px; padding:12px 0; }
+  header a { color:var(--mute); text-decoration:none; font-size:14px; }
+  h1 { font-size:20px; margin:0; flex:1; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { flex:1; }
+  button, .file { font:inherit; font-weight:600; border:0; border-radius:8px; padding:10px 12px; background:#2a2a2a; color:var(--ink); }
+  button.on, button.p { background:var(--ink); color:#000; }
+  .pane[hidden] { display:none; }
+  select { font:inherit; border:0; border-radius:8px; padding:8px 10px; background:#2a2a2a; color:var(--ink); }
+  canvas { width:100%; aspect-ratio:16/9; background:#111; border:1px solid var(--line); border-radius:10px; touch-action:none; display:block; }
+  .tools { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
+  .sw { width:30px; height:30px; border-radius:50%; border:2px solid transparent; padding:0; }
+  .sw.on { border-color:#fff; }
+  .grow { flex:1; }
+  .mute { color:var(--mute); font-size:13px; }
+  #status { min-height:20px; margin-top:10px; }
+  img.preview { max-width:100%; border-radius:10px; margin-top:10px; display:block; }
+</style>
+</head>
+<body>
+<header><h1>Send to TV</h1><a href="./">mimir-tv</a></header>
+<div class="tabs"><button data-pane="draw" class="on">Draw</button><button data-pane="photo">Photo</button></div>
+
+<section class="pane" id="draw">
+  <canvas id="pad"></canvas>
+  <div class="tools">
+    <span id="swatches"></span>
+    <span class="grow"></span>
+    <button id="size">Thin</button>
+    <button id="clear">Clear</button>
+  </div>
+  <div class="tools">
+    <label class="mute">Pad <select id="shape"><option value="wide">Wide (the TV's shape)</option><option value="tall">Tall (more room)</option></select></label>
+    <label class="mute">On TV <select id="hold"><option value="3">3 s</option><option value="6">6 s</option><option value="15">15 s</option>
+      <option value="30">30 s</option><option value="60">1 min</option><option value="300">5 min</option><option value="0">Until cleared</option></select></label>
+  </div>
+  <div class="mute">The TV draws along as you draw, over whatever is on, and lets go after the "On TV" time (Clear takes it
+    off at once). A tall pad shows in the middle of the TV, the same shape. Both settings stay on this phone.</div>
+</section>
+
+<section class="pane" id="photo" hidden>
+  <label class="file">Choose a photo<input type="file" id="pick" accept="image/*" hidden></label>
+  <img class="preview" id="preview" alt="" hidden>
+  <div class="tools"><button class="p" id="sendphoto" disabled>Show on TV</button></div>
+  <div class="mute">Shown full screen for a few seconds. Sent scaled down; the TV fetches it once, then it is gone.</div>
+</section>
+
+
+<div id="status" class="mute"></div>
+
+<script>
+// Nothing here is kept: strokes and the photo go to the Air's memory and on to the TV, then they are gone.
+const $ = s => document.querySelector(s);
+const say = t => { $("#status").textContent = t; };
+async function post(path, body, type) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": type || "application/json"}, body: type ? body : JSON.stringify(body)});
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+}
+const send = m => post("api/tv/send", {message: m}).catch(e => say(e.message));
+
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== b.dataset.pane);
+});
+
+// Draw. Points travel as fractions of the box (x, y 0..1) with the pen's pressure, so the TV redraws the same
+// strokes at its own size with the same brush: a smooth curve through the midpoints, width by pressure.
+const COLORS = ["#ffffff", "#ffd60a", "#ff375f", "#30d158", "#0a84ff", "#bf5af2"];
+const SIZES = [["Thin", 0.006], ["Medium", 0.012], ["Bold", 0.024]];
+let color = COLORS[0], size = 0, strokeId = 0, live = null, pending = [], strokes = [];
+// Pad shape and how long the TV keeps the drawing: this phone's choice, remembered here only.
+const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+               set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: not remembered */ } }};
+let shape = store.get("send.shape", "wide"), hold = Number(store.get("send.hold", "6")), aspect = 16 / 9, fitW = 0;
+$("#shape").value = shape; $("#hold").value = String(hold);
+if (!$("#hold").value) { hold = 6; $("#hold").value = "6"; }
+$("#shape").onchange = () => { shape = $("#shape").value; store.set("send.shape", shape); fitW = 0; clearAll(); fit(); };
+$("#hold").onchange = () => { hold = Number($("#hold").value); store.set("send.hold", String(hold)); };
+$("#swatches").innerHTML = COLORS.map((c, i) => `<button class="sw${i ? "" : " on"}" style="background:${c}" data-c="${c}"></button>`).join(" ");
+$("#swatches").onclick = e => { const b = e.target.closest(".sw"); if (!b) return; color = b.dataset.c; document.querySelectorAll(".sw").forEach(x => x.classList.toggle("on", x === b)); };
+$("#size").onclick = () => { size = (size + 1) % SIZES.length; $("#size").textContent = SIZES[size][0]; };
+
+const pad = $("#pad"), ctx = pad.getContext("2d");
+function fit() {
+  // A tall pad takes the screen's height left under it; set again only when the width changes (the phone turned),
+  // not when Safari's bars come and go, so the strokes keep their shape.
+  if (shape === "tall") {
+    const w = pad.getBoundingClientRect().width;
+    if (w !== fitW) {
+      fitW = w;
+      pad.style.aspectRatio = "auto";
+      pad.style.height = Math.max(260, Math.min(innerHeight - pad.getBoundingClientRect().top - 150, w * 2.2)) + "px";
+    }
+  } else { pad.style.aspectRatio = ""; pad.style.height = ""; }
+  const r = pad.getBoundingClientRect(), d = devicePixelRatio || 1;
+  aspect = r.width / r.height;
+  pad.width = r.width * d; pad.height = r.height * d; redraw();
+}
+function drawStroke(s) {
+  const w = pad.width, h = pad.height, p = s.points;
+  ctx.strokeStyle = s.color; ctx.lineCap = ctx.lineJoin = "round";
+  for (let i = 1; i < p.length; i++) {
+    const a = p[i - 1], b = p[i], c = p[i + 1] || b;
+    ctx.lineWidth = s.width * w * (0.5 + b[2]);
+    ctx.beginPath();
+    ctx.moveTo((a[0] + b[0]) / 2 * w, (a[1] + b[1]) / 2 * h);
+    ctx.quadraticCurveTo(b[0] * w, b[1] * h, (b[0] + c[0]) / 2 * w, (b[1] + c[1]) / 2 * h);
+    ctx.stroke();
+  }
+}
+function redraw() { ctx.clearRect(0, 0, pad.width, pad.height); strokes.forEach(drawStroke); }
+function point(e) {
+  const r = pad.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  return [+x.toFixed(4), +y.toFixed(4), +(e.pressure && e.pointerType !== "mouse" ? e.pressure : 0.5).toFixed(2)];
+}
+pad.addEventListener("pointerdown", e => {
+  pad.setPointerCapture(e.pointerId);
+  live = {id: strokeId++, color, width: SIZES[size][1], points: [point(e)]};
+  strokes.push(live); pending = [live.points[0]];
+});
+pad.addEventListener("pointermove", e => {
+  if (!live) return;
+  for (const ev of (e.getCoalescedEvents ? e.getCoalescedEvents() : [e])) { const p = point(ev); live.points.push(p); pending.push(p); }
+  redraw();
+});
+const up = () => { if (live && live.points.length === 1) pending.push(live.points[0]); flush(); live = null; pending = []; };
+pad.addEventListener("pointerup", up); pad.addEventListener("pointercancel", up);
+// Every 60 ms the new points of the stroke go to the TV (the last point is sent again so pieces join up).
+function flush() {
+  if (!live || !pending.length) return;
+  const pts = pending.splice(0, 200);
+  send({kind: "stroke", id: live.id, color: live.color, width: live.width, points: pts, aspect: +aspect.toFixed(4), hold});
+  if (pending.length === 0 && live) pending.push(pts[pts.length - 1]);
+}
+setInterval(() => { if (pending.length > 1) flush(); }, 60);
+function clearAll() { strokes = []; redraw(); send({kind: "clear"}); }
+$("#clear").onclick = clearAll;
+addEventListener("resize", fit); fit();
+
+// Photo: scaled to at most 1920 px on the long side, as JPEG, before it leaves the phone.
+let photoBlob = null;
+$("#pick").onchange = async () => {
+  const f = $("#pick").files[0]; if (!f) return;
+  say("Preparing…");
+  try {
+    const img = await createImageBitmap(f);
+    const k = Math.min(1, 1920 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    photoBlob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+    $("#preview").src = URL.createObjectURL(photoBlob); $("#preview").hidden = false; $("#sendphoto").disabled = false; say("");
+  } catch (e) { say("That photo could not be read."); }
+};
+$("#sendphoto").onclick = async () => {
+  if (!photoBlob) return;
+  try { await post("api/tv/photo", photoBlob, "image/jpeg"); say("Showing on the TV."); } catch (e) { say(e.message); }
+};
+</script>
+</body>
+</html>

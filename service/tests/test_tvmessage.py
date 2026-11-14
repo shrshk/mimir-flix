@@ -4,7 +4,7 @@ import threading
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix.tvmessage import PHOTO_FOR, SESSION, Overlay, router
+from mimir_tv.tvmessage import PHOTO_FOR, SESSION, Overlay, router
 
 
 class Clock:

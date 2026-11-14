@@ -4,8 +4,8 @@ import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix.recs import Recs, router
-from mimir_flix.streaming import Streaming, pick
+from mimir_tv.recs import Recs, router
+from mimir_tv.streaming import Streaming, pick
 
 TODAY = date(2026, 11, 1)
 FLAT = {"flatrate": [{"provider_name": "Netflix"}]}

@@ -5,8 +5,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from mimir_flix.app import create_app
-from mimir_flix.jellyfin import Jellyfin
+from mimir_tv.app import create_app
+from mimir_tv.jellyfin import Jellyfin
 
 
 class FakeJellyfin:
@@ -237,7 +237,7 @@ def test_the_page_version_changes_with_the_page(tmp_path, monkeypatch):
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text("v1")
-    monkeypatch.setattr("mimir_flix.app.STATIC", static)
+    monkeypatch.setattr("mimir_tv.app.STATIC", static)
     c = TestClient(
         create_app(Jellyfin("http://jf", "k", transport=httpx.MockTransport(FakeJellyfin().handler)), tmp_path)
     )
@@ -254,11 +254,11 @@ def test_the_page_is_told_which_connectors_are_set_up(tmp_path):
 
 
 def test_the_tv_app_is_served_for_the_tvs_downloader_once_it_is_built(c, tmp_path, monkeypatch):
-    monkeypatch.setenv("MIMIR_FLIX_DATA", str(tmp_path / "data"))
+    monkeypatch.setenv("MIMIR_TV_DATA", str(tmp_path / "data"))
     missing = c.get("/tv/app.apk")
-    assert missing.status_code == 404 and "mimir-flix-tv" in missing.json()["detail"]
+    assert missing.status_code == 404 and "android/build.sh" in missing.json()["detail"]
     (tmp_path / "data" / "tv").mkdir(parents=True)
-    (tmp_path / "data" / "tv" / "mimir-flix-tv.apk").write_bytes(b"PK\x03\x04apk")
+    (tmp_path / "data" / "tv" / "mimir-tv.apk").write_bytes(b"PK\x03\x04apk")
     got = c.get("/tv/app.apk")
     assert got.content == b"PK\x03\x04apk"
     assert got.headers["content-type"] == "application/vnd.android.package-archive"

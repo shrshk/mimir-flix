@@ -7,8 +7,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix.streaming import Streaming, pick, router
-from mimir_flix.tv import Tv, TvError
+from mimir_tv.streaming import Streaming, pick, router
+from mimir_tv.tv import Tv, TvError
 
 
 def providers(*names, category="flatrate"):
@@ -219,7 +219,7 @@ def test_suggestions_are_titles_from_one_search_without_app_lookups(tmp_path):
 def test_an_app_opens_at_the_title_itself_when_justwatch_has_its_link(tmp_path):
     from fastapi import FastAPI
 
-    from mimir_flix.streaming import APPS
+    from mimir_tv.streaming import APPS
 
     tmdb = FakeTmdb()
     s = Streaming(

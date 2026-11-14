@@ -15,25 +15,25 @@ from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
 from jobkit import Jobs
 
-from mimir_flix import checks, mirror, settings
-from mimir_flix import jobs as app_jobs
-from mimir_flix.app import create_app
-from mimir_flix.catalog import Catalog, CatalogError, Catalogs, Job, node_id
-from mimir_flix.catalog_routes import hidden_libraries, listing, plugin_paths
-from mimir_flix.catalog_routes import router
-from mimir_flix import hls as hls_mod
-from mimir_flix.hls import HlsError, HlsRelay, from_tailnet
-from mimir_flix.jellyfin import Jellyfin, JellyfinError
-from mimir_flix.jf_routes import router as jf_router
-from mimir_flix.kodi import Kodi
-from mimir_flix.mcp_server import router as mcp_router
-from mimir_flix.providers import Providers
-from mimir_flix.providers import router as providers_router
-from mimir_flix.resolver import start_resolver
-from mimir_flix.strm import add, follow, followed, refresh_shows, show_folder, write_movie, write_show
-from mimir_flix.vault import Vault
-from mimir_flix.watchlist import Watchlist
-from mimir_flix.watchlist import router as list_router
+from mimir_tv import checks, mirror, settings
+from mimir_tv import jobs as app_jobs
+from mimir_tv.app import create_app
+from mimir_tv.catalog import Catalog, CatalogError, Catalogs, Job, node_id
+from mimir_tv.catalog_routes import hidden_libraries, listing, plugin_paths
+from mimir_tv.catalog_routes import router
+from mimir_tv import hls as hls_mod
+from mimir_tv.hls import HlsError, HlsRelay, from_tailnet
+from mimir_tv.jellyfin import Jellyfin, JellyfinError
+from mimir_tv.jf_routes import router as jf_router
+from mimir_tv.kodi import Kodi
+from mimir_tv.mcp_server import router as mcp_router
+from mimir_tv.providers import Providers
+from mimir_tv.providers import router as providers_router
+from mimir_tv.resolver import start_resolver
+from mimir_tv.strm import add, follow, followed, refresh_shows, show_folder, write_movie, write_show
+from mimir_tv.vault import Vault
+from mimir_tv.watchlist import Watchlist
+from mimir_tv.watchlist import router as list_router
 from tests.test_library import FakeJellyfin
 
 SITE = "https://cat.example"
@@ -266,7 +266,7 @@ def test_routes_browse_play_and_add_to_jellyfin(home, cat, tmp_path, monkeypatch
     assert all(i["jf_id"] for i in c.get("/api/p/tv1/browse", params={"node": node_id("tv1", S1)}).json()["items"])
     # Removed in Jellyfin (the file is still on disk): no longer marked.
     jf.removed.add("strm:Heat (1995)")
-    monkeypatch.setattr("mimir_flix.catalog_routes.time.monotonic", lambda: 10**9)  # past the few seconds of reuse
+    monkeypatch.setattr("mimir_tv.catalog_routes.time.monotonic", lambda: 10**9)  # past the few seconds of reuse
     assert c.get("/api/p/tv1/home").json()[0]["items"][0]["jf_id"] == ""
     # The provider's libraries stay out of Your library.
     assert hidden_libraries(home) == {"My TV", "My TV Movies", "My TV Live"}
@@ -411,7 +411,7 @@ def test_files_already_there_are_left_alone(tmp_path):
 def test_my_list_saves_pointers_and_marks_new_episodes(home, cat, tmp_path):
     jf = FakeJellyfin()
     jellyfin = Jellyfin("http://jf", "key", transport=httpx.MockTransport(jf.handler))
-    wl = Watchlist(tmp_path / "mimir-flix.db")
+    wl = Watchlist(tmp_path / "mimir-tv.db")
     c = app(home, tmp_path, jellyfin, watchlist=wl)
     dark = c.get("/api/p/tv1/browse", params={"node": node_id("tv1", SECTIONS["Shows"])}).json()["items"][0]
 
@@ -461,7 +461,7 @@ def test_hourly_jobs_record_each_run_under_the_providers_id(home, cat, tmp_path)
     root = tmp_path / "media" / "tv1"
     write_show(cat, "tv1", SHOW, "Dark", root, "http://air:8724")
     follow(root, "Dark", SHOW)
-    jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
+    jobs = Jobs(tmp_path / "mimir-tv.db", "mimir-tv")
     app_jobs.define(jobs)
     fake = FakeJellyfin()
     jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
@@ -545,7 +545,7 @@ def test_without_a_plugin_installed_its_provider_is_left_out(tmp_path, home):
 def test_the_assistant_searches_plays_and_saves_a_providers_titles(home, cat, tmp_path):
     jf = FakeJellyfin()
     jellyfin = Jellyfin("http://jf", "key", transport=httpx.MockTransport(jf.handler))
-    wl = Watchlist(tmp_path / "mimir-flix.db")
+    wl = Watchlist(tmp_path / "mimir-tv.db")
     routes = router(home, jellyfin, None, tmp_path / "media", "http://air:8724", tmp_path / "thumbs", watchlist=wl)
     connectors = {"providers": lambda: listing(home)}
     jf_routes = jf_router(jellyfin, None, "http://air:8724")
@@ -677,7 +677,7 @@ def test_the_relay_checks_the_address_it_actually_connected_to(monkeypatch):
 def test_the_whole_catalogue_goes_into_jellyfin_a_batch_of_shows_at_a_time(home, cat, tmp_path, monkeypatch):
     media, air = tmp_path / "media", "http://air:8724"
     shows_root, movies_root = media / "tv1", media / "tv1-movies"
-    jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
+    jobs = Jobs(tmp_path / "mimir-tv.db", "mimir-tv")
     app_jobs.define(jobs)
     fake = FakeJellyfin()
     jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))
@@ -758,7 +758,7 @@ def test_a_limited_whole_catalogue_keeps_the_newest_of_each_category_and_trashes
     media, air, trash = tmp_path / "media", "http://air:8724", tmp_path / "Trash"
     shows_root, movies_root = media / "tv1", media / "tv1-movies"
     trash.mkdir()
-    jobs = Jobs(tmp_path / "mimir-flix.db", "mimir-flix")
+    jobs = Jobs(tmp_path / "mimir-tv.db", "mimir-tv")
     app_jobs.define(jobs)
     fake = FakeJellyfin()
     jf = Jellyfin("http://jf", "k", transport=httpx.MockTransport(fake.handler))

@@ -3,9 +3,9 @@
 import httpx
 import pytest
 
-from mimir_flix import tvsetup
-from mimir_flix.jellyfin import Jellyfin, JellyfinError
-from mimir_flix.tv import Tv
+from mimir_tv import tvsetup
+from mimir_tv.jellyfin import Jellyfin, JellyfinError
+from mimir_tv.tv import Tv
 
 
 class FakeTv(Tv):

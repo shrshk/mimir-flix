@@ -4,7 +4,7 @@ import io
 
 from PIL import Image
 
-from mimir_flix import badges
+from mimir_tv import badges
 
 
 def jpeg(colour="#808080") -> bytes:

@@ -2,12 +2,12 @@ import json
 
 import pytest
 
-from mimir_flix import settings
+from mimir_tv import settings
 
 
 def test_settings_file_then_environment_over_the_defaults(tmp_path, monkeypatch):
     (tmp_path / "settings.json").write_text(json.dumps({"tv_host": "10.0.0.5", "port": 9000, "media_root": "~/m"}))
-    monkeypatch.setenv("MIMIR_FLIX_PORT", "9100")
+    monkeypatch.setenv("MIMIR_TV_PORT", "9100")
     cfg = settings.load(tmp_path)
     assert cfg["tv_host"] == "10.0.0.5" and cfg["port"] == 9100  # the environment wins, as a number
     assert cfg["tvs"] == [{"name": "TV", "host": "10.0.0.5", "kind": "android"}]  # the one-TV form is the first TV
@@ -32,7 +32,7 @@ def test_save_merges_and_keeps_only_what_differs_from_the_defaults(tmp_path):
 
 
 def test_a_settings_file_with_wholphins_home_rows_loads(tmp_path):
-    # A key the defaults do not know stops mimir-flix at start (a typo would otherwise be silently ignored).
+    # A key the defaults do not know stops mimir-tv at start (a typo would otherwise be silently ignored).
     rows = {"languages": ["Telugu", "Hindi"], "channels": ["Channel One"]}
     (tmp_path / "settings.json").write_text(json.dumps({"wholphin_home": rows}))
     assert settings.load(tmp_path)["wholphin_home"] == rows

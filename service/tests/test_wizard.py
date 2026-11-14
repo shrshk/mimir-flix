@@ -4,8 +4,8 @@ import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mimir_flix import wizard
-from mimir_flix.vault import Vault
+from mimir_tv import wizard
+from mimir_tv.vault import Vault
 
 KEY = "jf-key-123"
 
@@ -33,7 +33,7 @@ class FakeJellyfin:
             return (
                 httpx.Response(204)
                 if request.method == "POST"
-                else httpx.Response(200, json={"Items": [{"AppName": "mimir-flix", "AccessToken": KEY}]})
+                else httpx.Response(200, json={"Items": [{"AppName": "mimir-tv", "AccessToken": KEY}]})
             )
         if path == "/System/Configuration/encoding":
             if request.method == "POST":
@@ -68,7 +68,7 @@ def states(c) -> dict:
 
 
 def test_a_new_mac_goes_through_every_step_and_the_wizard_locks_at_finish(tmp_path, monkeypatch):
-    monkeypatch.delenv("MIMIR_FLIX_HOST", raising=False)
+    monkeypatch.delenv("MIMIR_TV_HOST", raising=False)
     c, jf, vault, restarts = setup(tmp_path)
     config = tmp_path / "config"
     assert set(states(c).values()) == {"todo"} and c.get("/api/setup").json()["locked"] is False
@@ -263,7 +263,7 @@ def test_off_site_backups_are_set_up_once_per_mac_then_turned_on_here(tmp_path, 
     assert c.put("/api/settings/backup", json={"dir": str(tmp_path / "backups")}).status_code == 200
     assert c.put("/api/settings/offsite", json={"on": True}).json()["on"] is True
     cfg = json.loads((config / "settings.json").read_text())
-    assert cfg["offsite"] == "backup:mimir-flix" and cfg["rclone_config"] == str(shared)
+    assert cfg["offsite"] == "backup:mimir-tv" and cfg["rclone_config"] == str(shared)
     stored = (config / "settings.json").read_text()
     assert "k-secret" not in stored and code not in stored  # neither the key nor the code is kept here
     assert c.put("/api/settings/offsite", json={"on": False}).json()["on"] is False
@@ -292,7 +292,7 @@ def test_phones_reach_it_on_the_macs_tailscale_name_and_the_tv_on_the_home_netwo
     (bin_dir / "tailscale").write_text(FAKE_TAILSCALE)
     (bin_dir / "tailscale").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
-    monkeypatch.setattr("mimir_flix.wizard.lan_address", lambda: "192.0.2.10")
+    monkeypatch.setattr("mimir_tv.wizard.lan_address", lambda: "192.0.2.10")
     config = tmp_path / "config"
     config.mkdir(exist_ok=True)
     (config / "settings.json").write_text("{}")
@@ -324,6 +324,6 @@ def test_phones_reach_it_on_the_macs_tailscale_name_and_the_tv_on_the_home_netwo
     )
     assert c.put("/api/settings/tailnet", json={"on": True}).status_code == 409
 
-    # With a home domain, the TV opens mimir-flix by the resolver's name.
+    # With a home domain, the TV opens mimir-tv by the resolver's name.
     (config / "settings.json").write_text(json.dumps({"resolver": "https://lan.home.example.com"}))
     assert c.get("/api/settings").json()["tv_url"] == "https://lan.home.example.com"
