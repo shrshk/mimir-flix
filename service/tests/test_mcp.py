@@ -191,5 +191,5 @@ def test_a_provider_is_only_ever_one_set_up_here(tmp_path):
     # The provider's id goes into a path: anything else (from a model that was talked into it) could reach another route.
     c = setup(tmp_path, providers=[{"id": "p1", "name": "My IPTV"}])
     for bad in ("../settings/restart?", "p1/../../settings/providers/p1?", "p2"):
-        text, failed = tool(c, "add_to_my_list", provider=bad, id="node1", title="A show")
+        text, failed = tool(c, "add_to_jellyfin", provider=bad, id="node1", title="A show")
         assert failed and "no such provider" in text, bad

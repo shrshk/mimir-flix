@@ -47,7 +47,7 @@ def rows(
             | filters,
         }
 
-    out = [{"type": "ContinueWatchingCombined"}]  # favourites (the watchlist) are in Wholphin's side menu
+    out = [{"type": "ContinueWatchingCombined"}]  # favourites (My list) are in Wholphin's side menu
     lists = {
         p["Name"]: p["Id"]
         for p in (

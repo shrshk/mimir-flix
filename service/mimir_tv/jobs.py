@@ -16,7 +16,6 @@ from mimir_tv.catalog import CatalogError, Catalogs, Job
 from mimir_tv.catalog_routes import libraries, roots
 from mimir_tv.jellyfin import Jellyfin, JellyfinError
 from mimir_tv.strm import refresh_shows
-from mimir_tv.watchlist import Watchlist
 from mimir_tv.wizard import allowed
 
 NEW_EPISODES = "new-episodes"
@@ -26,20 +25,16 @@ ON_MY_APPS = "on-my-apps"
 
 
 def define(jobs: Jobs) -> None:
-    jobs.define(NEW_EPISODES, "New episodes: added shows into Jellyfin, My list shows marked", "hourly")
+    jobs.define(NEW_EPISODES, "New episodes: added shows into Jellyfin", "hourly")
     jobs.define(ON_MY_APPS, "On my apps: what is popular on the house's streaming apps, into Jellyfin", "daily")
     jobs.define(
         WHOLE_CATALOGUE, "Whole catalogue: every movie and show into Jellyfin, a batch of shows a run", "hourly"
     )
 
 
-def new_episodes(
-    jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Path, resolver: str, watchlist: Watchlist | None = None
-) -> int:
-    """New episodes of every provider's followed shows into their folders, then a scan so Jellyfin lists them; shows
-    on My list get a count of their new episodes (nothing goes into Jellyfin for those)."""
+def new_episodes(jobs: Jobs, catalogs: Catalogs, jf: Jellyfin, media_root: Path, resolver: str) -> int:
+    """New episodes of every provider's followed shows into their folders, then a scan so Jellyfin lists them."""
     with jobs.run(NEW_EPISODES) as run:
-        listed = watchlist.check(catalogs) if watchlist else 0
         found = 0
         for entry, cat in catalogs.all():
             new = refresh_shows(cat, entry["id"], roots(media_root, entry["id"])["shows"], resolver)
@@ -48,7 +43,7 @@ def new_episodes(
                 if lib:
                     jf.scan(lib.get("ItemId"))
             found += new
-        run.summary = f"{found} new episode{'s' if found != 1 else ''}" + (f", {listed} on My list" if listed else "")
+        run.summary = f"{found} new episode{'s' if found != 1 else ''}"
         return found
 
 

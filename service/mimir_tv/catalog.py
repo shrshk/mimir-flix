@@ -13,7 +13,7 @@ A plugin is a Python package that registers an object under the entry point grou
 
 The user adds a provider on the Settings page under a name they pick; that name is what the page shows. Core does
 everything generic with what a Catalog hands it: the routes (/api/p/<provider id>/…), the resolver Jellyfin's .strm
-files point at, the stream relay, .strm files, Kodi, My list, the hourly jobs and the assistant's tools. A plugin may
+files point at, the stream relay, .strm files, Kodi, the hourly jobs and the assistant's tools. A plugin may
 also answer paths of its own (serve(), e.g. an API for other players) and add lines to its Settings card (info()).
 
 An item, as page(), home() and search() return them:
@@ -236,7 +236,7 @@ class Catalogs:
         return next((x for x in self.all() if x[0]["id"] == pid), None)
 
     def default(self) -> tuple[dict, Catalog] | None:
-        """The first plugin provider: what a link or a My list entry from before providers had ids belongs to."""
+        """The first plugin provider: what a link from before providers had ids belongs to."""
         found = self.all()
         return found[0] if found else None
 

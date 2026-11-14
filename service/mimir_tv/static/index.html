@@ -548,7 +548,7 @@ function tile(i, sub) {
   // Where it plays: the house's apps, and the provider for its results (both when its title is on an app too).
   const badges = (i.apps || []).map(a => `<b class="${esc(a.app)}">${esc(a.name)}</b>`).concat(i.src ? [`<b class="prov">${esc(i.src)}</b>`] : []);
   const apps = badges.length ? `<span class="apps">${badges.join("")}</span>` : "";
-  if (i.kind === "folder" && i.node) shows[i.node] = {thumb: i.thumb || "", sub: i.sub || "", apps: i.apps, tmdbRef: i.tmdbRef, tmdbTitle: i.tmdbTitle};  // for + My list on its page
+  if (i.kind === "folder" && i.node) shows[i.node] = {thumb: i.thumb || "", sub: i.sub || "", apps: i.apps, tmdbRef: i.tmdbRef, tmdbTitle: i.tmdbTitle};  // for the app buttons on its page
   return `<div class="tile" tabindex="0" ${attrs} data-title="${esc(i.title)}"><div class="art"><span class="ph">${esc(i.title)}</span>${img}${i.jf_id ? `<span class="in">✓ Jellyfin</span>` : ""}${i.new ? `<span class="new">${i.new} new</span>` : ""}${apps}</div>`
     + (i.progress ? `<div class="bar2" style="width:${i.progress}%"></div>` : "")
     + `<div class="t">${esc(i.title)}</div>${line ? `<div class="s">${esc(line)}</div>` : ""}</div>`;
@@ -576,17 +576,14 @@ function playInApp(id) {
   fetch("/api/jf/phone", {method: "POST", keepalive: true, headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})}).catch(() => {});
 }
 function actions(v, k, ctx) {
-  // A streaming title: its apps; in a sheet also My list and 👍/👎 (recommendations learn from them).
-  if (v.tmdb) return appButtons(v) + (ctx === "sheet" ? listBtn({tmdb: v.tmdb, title: v.title}) + voteBtns(v) : "");
+  // A streaming title: its apps; in a sheet also 👍/👎 (recommendations learn from them).
+  if (v.tmdb) return appButtons(v) + (ctx === "sheet" ? voteBtns(v) : "");
   return playActions(v, k, ctx) + appButtons(v);
 }
 function playActions(v, k, ctx) {
   const c = ctx === "sheet" ? 1 : 0;
-  // + My list: in a sheet, and on the rows of a list of movies or channels (an episode belongs to its show).
-  // A title already in the home library goes on My list by its Jellyfin id (in its sheet).
-  const mine = v.id || v.jf_id ? (ctx === "sheet" || !v.id ? listBtn({jf: v.id || v.jf_id, title: v.title}) : "")
-    : ctx !== "sheet" && current.episodic ? ""
-    : listBtn({p: v.p, url: v.url, title: v.title, thumb: v.thumb, sub: v.sub, here: !!v.here, page: ctx === "sheet" ? v.page || "" : current.node || ""});
+  // + My list: titles in the home library only (a Jellyfin favourite), in a sheet and on a provider's rows.
+  const mine = v.id || v.jf_id ? (ctx === "sheet" || !v.id ? listBtn({jf: v.id || v.jf_id, title: v.title}) : "") : "";
   if (TV) return `<button class="p" onclick="go('tv',${k},${c})">▶ Play</button>`
     + (kodiReady ? `<button class="alt" onclick="go('kodi',${k},${c})">Kodi</button>` : "") + mine;
   // Your videos and a provider's items Jellyfin has (jf_id, from Jellyfin itself): ▶ opens them in Jellyfin (Swiftfin
@@ -629,19 +626,12 @@ function mergeStreaming(streams, local) {
   });
 }
 
-// My list: one list for the house. Titles in the home library are Jellyfin favourites (every Jellyfin app shows them);
-// titles on the streaming apps (by TMDB id) and each provider's shows and videos are kept on the Air, as pointers.
-// One list, the last added first.
+// My list: the house's Jellyfin favourites (every Jellyfin app shows them), the last added first. A title not in the
+// home library goes into Jellyfin first.
 let saved = new Set(), shows = {}, toSave = [];
-const keyOf = t => t.node || t.url || (t.tmdb ? "tmdb:" + t.tmdb : t.jf ? "jf:" + t.jf : "");
+const keyOf = t => "jf:" + t.jf;
 async function loadList() {
-  const [library, titles, ...mine] = await Promise.all([
-    api("/api/jf/list").catch(() => []),
-    api("/api/list/titles").catch(() => []),
-    ...provs().map(p => api(P(p.id) + "/list").catch(() => [])),
-  ]);
-  const l = [...library.map(t => ({...t, jf: t.id, key: "jf:" + t.id})), ...titles.map(t => ({...t, key: "tmdb:" + t.tmdb, sub: t.apps.map(a => a.name).join(", ") || t.year})), ...mine.flat()]
-    .sort((a, b) => (b.added || 0) - (a.added || 0));  // newest first, whichever kind it is
+  const l = (await api("/api/jf/list").catch(() => [])).map(t => ({...t, jf: t.id, key: "jf:" + t.id}));
   saved = new Set(l.map(i => i.key));
   return l;
 }
@@ -652,14 +642,8 @@ function listBtn(t) {
 async function toggleList(n) {
   const t = toSave[n], key = keyOf(t), on = saved.has(key);
   try {
-    if (t.jf) {
-      if (on) await api("/api/jf/list?id=" + enc(t.jf), {method:"DELETE"});
-      else await api("/api/jf/list", {method:"POST", body:{id: t.jf}});
-    } else if (t.tmdb && !t.node && !t.url) {
-      if (on) await api("/api/list/titles?tmdb=" + enc(t.tmdb), {method:"DELETE"});
-      else await api("/api/list/titles", {method:"POST", body:{tmdb: [t.tmdb]}});
-    } else if (on) await api(P(t.p || pidOf(t.node)) + "/list?key=" + enc(key), {method:"DELETE"});
-    else await api(P(t.p || pidOf(t.node)) + "/list", {method:"POST", body:t});
+    if (on) await api("/api/jf/list?id=" + enc(t.jf), {method:"DELETE"});
+    else await api("/api/jf/list", {method:"POST", body:{id: t.jf}});
   } catch (e) { return toast(e.message); }
   on ? saved.delete(key) : saved.add(key);
   document.querySelectorAll(".lb").forEach(b => { if (b.dataset.key === key) b.textContent = on ? "＋ My list" : "✓ My list"; });
@@ -987,10 +971,9 @@ async function provStatus() {
 }
 
 function showSave() {
-  const s = showOf(current);
-  // A show Jellyfin has is a Jellyfin favourite on My list, like anything in the library.
-  const t = current.jf_id ? {jf: current.jf_id, title: s.title} : {p: pidOf(s.node), node: s.node, title: s.title, ...(shows[s.node] || {})};
-  return listBtn(t).replace('class="alt lb"', 'class="lb"');
+  // A show Jellyfin has can go on My list (a Jellyfin favourite), like anything in the library.
+  if (!current.jf_id) return "";
+  return listBtn({jf: current.jf_id, title: showOf(current).title}).replace('class="alt lb"', 'class="lb"');
 }
 
 function episodicShow(items) {
@@ -1148,7 +1131,7 @@ async function myList() {
   current = {node: "__list", title: "My list", items: list, videos: []};
   document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x.dataset.tab === "list"));
   $("#grid").innerHTML = list.length ? list.map(i => tile(i)).join("")
-    : `<div class="full mute" style="margin-top:8px">Nothing saved yet. Use ＋ My list on a movie, show or channel to keep it here; nothing goes into Jellyfin until you add it.</div>`;
+    : `<div class="full mute" style="margin-top:8px">Nothing saved yet. Use ＋ My list on a title in Jellyfin to keep it here. It shows in every Jellyfin app too.</div>`;
   // Remove in one tap: ✕ on each poster.
   $("#grid").querySelectorAll(".tile").forEach((t, n) => {
     const i = list[n];

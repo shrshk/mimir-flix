@@ -15,10 +15,10 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from mimir_tv.jellyfin import Jellyfin, JellyfinError, JellyfinMissing
+from mimir_tv.jellyfin import Jellyfin, JellyfinError
 from mimir_tv.kodi import Kodi, KodiError
 from mimir_tv.tv import TvError
-from mimir_tv.watchlist import Watchlist
+from mimir_tv.mylist import ListDates
 
 FOLDERS = {"CollectionFolder", "Folder", "Series", "Season", "BoxSet", "UserView", "PhotoAlbum"}
 PLAYABLE = {"Movie", "Episode", "Video", "MusicVideo"}
@@ -111,7 +111,7 @@ def router(
     kodi: Kodi | None,
     tv_base: str,
     open_app=None,
-    watchlist: Watchlist | None = None,
+    dates: ListDates | None = None,
     hidden: Callable[[], set[str]] = set,
     play_app=None,
     phone_app: Callable[[], str] = lambda: "swiftfin",
@@ -259,27 +259,13 @@ def router(
         n = guard(jf.next_episode, guard(jf.item, id))
         return card(n) if n else {}
 
-    # My list's titles in the home library are Jellyfin favourites: one list for every Jellyfin app, and the
-    # recommendations read the same favourites (taste.py). Entries kept here before move there once.
-    def move_old_list() -> None:
-        for old in [i for i in watchlist.items() if i["kind"] == "jellyfin"] if watchlist else []:
-            item_id = old["url"].removeprefix("jf:")
-            try:
-                jf.item(item_id)
-                jf.set_favourite(item_id, True)
-            except JellyfinMissing:
-                pass  # gone from the library: dropped
-            except JellyfinError:
-                return  # Jellyfin is down: the next visit tries again
-            watchlist.remove(old["url"])
-
+    # My list is the user's Jellyfin favourites: one list for every Jellyfin app (mylist.py).
     @api.get("/api/jf/list")
     def listed():
         """Newest on My list first (added: when, in seconds)."""
-        move_old_list()
         found = {i["Id"]: i for i in guard(jf.favourites)}
         library = {i: since(x.get("DateCreated")) for i, x in found.items()}
-        added = watchlist.favourites_added(library) if watchlist else library
+        added = dates.added(library) if dates else library
         return sorted((card(x) | {"added": added[i]} for i, x in found.items()), key=lambda c: -c["added"])
 
     @api.post("/api/jf/list", status_code=201)
@@ -288,8 +274,8 @@ def router(
         if guard(jf.user_data, body.id).get("IsFavorite"):
             return {"added": [], "already": [found["title"]]}
         guard(jf.set_favourite, body.id, True)
-        if watchlist:
-            watchlist.favourite(body.id, True)
+        if dates:
+            dates.favourite(body.id, True)
         return {"added": [found["title"]], "already": []}
 
     @api.delete("/api/jf/list", status_code=204)
@@ -297,8 +283,8 @@ def router(
         if not guard(jf.user_data, id).get("IsFavorite"):
             raise HTTPException(404, "not on My list")
         guard(jf.set_favourite, id, False)
-        if watchlist:
-            watchlist.favourite(id, False)
+        if dates:
+            dates.favourite(id, False)
 
     @api.post("/api/jf/tv")
     def on_tv(p: Play):

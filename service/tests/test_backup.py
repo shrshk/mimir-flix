@@ -125,7 +125,11 @@ def test_each_clean_backup_goes_off_site_after_it_and_is_checked(tmp_path, monke
     assert last[backup.JOB]["status"] == "ok"
     assert last[backup.OFFSITE]["status"] == "ok" and last[backup.OFFSITE]["summary"].endswith("copy matches")
     assert [p.name for p in (tmp_path / "remote").iterdir()] == [p.name for p in dest.iterdir()]  # today's archive
-    assert [c.split()[0] for c in (tmp_path / "calls").read_text().splitlines()] == ["size", "sync", "check"]  # counted first: nothing to send is never synced
+    assert [c.split()[0] for c in (tmp_path / "calls").read_text().splitlines()] == [
+        "size",
+        "sync",
+        "check",
+    ]  # counted first: nothing to send is never synced
 
 
 def test_a_failed_backup_is_never_synced_off_site(tmp_path, monkeypatch):

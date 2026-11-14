@@ -51,8 +51,7 @@ from mimir_tv.tvmessage import router as tvmessage_router
 from mimir_tv.providers import Providers
 from mimir_tv.providers import router as providers_router
 from mimir_tv.vault import Vault
-from mimir_tv.watchlist import Watchlist
-from mimir_tv.watchlist import router as list_router
+from mimir_tv.mylist import ListDates
 from mimir_tv.wizard import allowed
 from mimir_tv.into import router as into_router
 from mimir_tv.wizard import router as wizard_router
@@ -397,15 +396,14 @@ def main() -> None:
     play_app = (lambda item_id, ms: tv_answer(lambda: tv.play_in_wholphin(item_id, ms))) if tv else None
     # Provider plugins (catalog.py): the ones in Settings whose plugin is installed.
     catalogs = Catalogs(config, vault, data)
-    # My list, for every house: streaming titles, library titles and providers' shows and videos.
-    watchlist = Watchlist(data / "mimir-tv.db")
+    # My list: the Jellyfin favourites, newest first (when each went on it is kept here).
     routers = [
         jf_router(
             jf,
             kodi,
             resolver,
             open_app,
-            watchlist,
+            ListDates(data / "mimir-tv.db"),
             hidden=lambda: hidden_libraries(catalogs),
             play_app=play_app,
             phone_app=lambda: settings.load(config)["phone_app"],
@@ -442,7 +440,7 @@ def main() -> None:
     # assistant that recommends (E2-2: an OpenClaw skill), which shows its picks in its own chat.
     recs = Recs(streaming, watched, rules=lambda: settings.recs_rules(config), disliked=lambda: taste.disliked())
     taste = Taste(data / "mimir-tv.db", recs, jf if key_file.exists() else None)
-    routers += [recs_router(recs), taste_router(taste), list_router(watchlist, recs.details)]
+    routers += [recs_router(recs), taste_router(taste)]
     # Messages to the TV (a doodle or a photo): memory only; the TV app's overlay starts over ADB when one comes.
     routers.append(tvmessage_router(Overlay(wake=tv_try(tv.open_overlay) if tv else None)))
     # Each run is recorded in mimir-tv's own database (jobkit); the jobs page reads GET /api/jobs.
@@ -465,11 +463,9 @@ def main() -> None:
     # A provider plugin's pages, the resolver its .strm files point at, and the hourly jobs.
     start_resolver(catalogs, port, jf=jf)
     routers.append(
-        catalog_router(
-            catalogs, jf, kodi, media_root, resolver, data / "thumbs", open_app, watchlist=watchlist, play_app=play_app
-        )
+        catalog_router(catalogs, jf, kodi, media_root, resolver, data / "thumbs", open_app, play_app=play_app)
     )
-    start_provider_jobs(jobs, catalogs, jf, media_root, resolver, watchlist, streaming)
+    start_provider_jobs(jobs, catalogs, jf, media_root, resolver, streaming)
     connectors = {"providers": lambda: listing(catalogs), "kodi": kodi is not None, "tv": tv is not None}
     names = [*cfg["hosts"], urlsplit(resolver).hostname or ""]  # the TV reaches this app by the resolver's name
     app = create_app(
@@ -512,16 +508,14 @@ def tv_try(fn):
     return run
 
 
-def start_provider_jobs(
-    jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, resolver: str, watchlist, streaming=None
-) -> None:
-    """Hourly: new episodes of followed and listed shows (from the second hour), and each provider's own jobs when
+def start_provider_jobs(jobs: Jobs, catalogs: Catalogs, jf, media_root: Path, resolver: str, streaming=None) -> None:
+    """Hourly: new episodes of followed shows (from the second hour), and each provider's own jobs when
     they are due (from the start), unless a job is paused on the jobs page."""
     app_jobs.define(jobs)
 
     def new_episodes():
         try:
-            app_jobs.new_episodes(jobs, catalogs, jf, media_root, resolver, watchlist)
+            app_jobs.new_episodes(jobs, catalogs, jf, media_root, resolver)
         except (JellyfinError, CatalogError, OSError) as e:  # recorded as failed; tried again next round
             print("new episodes failed:", e)
 

@@ -78,7 +78,7 @@ const CARDS = [
     <div class="checks">${Object.entries(recsOpts?.languages || {}).filter(([k]) => k !== "any").map(([k, l]) => `<label class="row"><input type="checkbox" name="lang" value="${k}" ${c.recs_languages.includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div>`},
   {key: "providers", title: "Providers", noSave: true, form: () => `
     <p class="mute">IPTV from an M3U playlist or an Xtream Codes login: Jellyfin plays the channels and shows the guide.
-      ${kinds.length ? "Or a provider with its own catalogue, through its installed plugin: its own section on Home, in search and My list." : ""}
+      ${kinds.length ? "Or a provider with its own catalogue, through its installed plugin: its own section on Home and in search." : ""}
       Logins stay encrypted in mimir-tv and never reach Jellyfin or this page again.</p>
     <div id="provlist">${providers.map(p => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:8px">
       <span>${esc(p.name)} <span class="mute">${p.kind === "xtream" ? "Xtream" : p.kind === "m3u" ? "M3U" : esc(p.label || p.kind)}${p.guide ? " · guide" : ""}</span></span>

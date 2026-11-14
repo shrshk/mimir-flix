@@ -9,7 +9,6 @@ folder's url); a video by its url. Each provider has three Jellyfin libraries, n
 
 import base64
 import hashlib
-import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
@@ -26,7 +25,6 @@ from mimir_tv.jellyfin import Jellyfin, JellyfinError
 from mimir_tv.kodi import Kodi, KodiError
 from mimir_tv.strm import add, follow, followed, play_line, safe, show_folder, write_movie, write_show
 from mimir_tv.tv import TvError
-from mimir_tv.watchlist import Watchlist
 
 THUMB = "/api/thumb?u="
 
@@ -54,18 +52,6 @@ class Show(BaseModel):
     tv: bool = False
 
 
-class Saved(BaseModel):
-    """A title for My list: a show (node) or a video (url), as the page shows it."""
-
-    node: str = ""
-    url: str = ""
-    title: str
-    thumb: str = ""  # the page's thumbnail link (/api/thumb?u=...)
-    sub: str = ""
-    page: str = ""
-    here: bool = False
-
-
 def router(
     catalogs: Catalogs,
     jf: Jellyfin,
@@ -75,11 +61,9 @@ def router(
     thumbs: Path,
     open_app=None,
     hls: HlsRelay | None = None,
-    watchlist: Watchlist | None = None,
     play_app=None,
 ) -> APIRouter:
     hls = hls or HlsRelay()
-    watchlist = watchlist or Watchlist(thumbs.parent / "mimir-tv.db")
     api = APIRouter()
     thumbs.mkdir(parents=True, exist_ok=True)
     # Thumbnails: never from this Mac itself, redirects included (as the relay).
@@ -173,7 +157,6 @@ def router(
         url = page_url(pid, cat, node)
         have = in_jellyfin(entry)
         items = [item(pid, i, have) for i in guard(cat.page, url) if i["kind"] in ("folder", "video")]
-        watchlist.seen(url)
         trail = cat.trail(url)
         return {
             "title": trail[-1] if trail else entry["name"],
@@ -339,71 +322,6 @@ def router(
         add(root, target.parent.name)  # kept when the whole catalogue is limited (mirror.prune)
         ensure_library(library, "movies" if which == "movies" else "homevideos", root)
         return {"id": hand_over(pid, library, target, v.tv)}
-
-    @api.get("/api/p/{pid}/list")
-    def my_list(pid: str):
-        """This provider's titles on My list, newest first, as tiles (with what Jellyfin has and how many new
-        episodes). key is what DELETE takes: a show's node or a video's url."""
-        entry, _ = provider(pid)
-        have = in_jellyfin(entry)
-        first = catalogs.default()[0]["id"]  # entries saved before providers had ids
-        out = []
-        for s in watchlist.items():
-            if s["kind"] not in ("show", "video") or (s["provider"] or first) != pid:
-                continue
-            if have.get(s["url"]):  # Jellyfin has it now: a favourite there instead (My list reads those)
-                try:
-                    jf.set_favourite(have[s["url"]], True)
-                    watchlist.remove(s["url"])
-                    continue
-                except JellyfinError:
-                    pass  # Jellyfin is down: kept here until the next visit
-            show = s["kind"] == "show"
-            i = {"title": s["title"], "desc": "", "kind": "folder" if show else "video", "thumb": s["thumb"]}
-            i |= {"url": s["url"], "sub": s["sub"], "here": bool(s["here"])}
-            tile = item(pid, i, have) | {"key": node_id(pid, s["url"]) if show else s["url"], "new": s["new"]}
-            tile["added"] = s["added"]
-            if not show and s["page"]:
-                tile["page"] = node_id(pid, s["page"])
-            out.append(tile)
-        return out
-
-    @api.post("/api/p/{pid}/list", status_code=201)
-    def save(pid: str, t: Saved):
-        """Saves a pointer to the title; nothing is fetched, downloaded or added to Jellyfin. A title Jellyfin has
-        already is a Jellyfin favourite instead, like any title in the library (no copy is kept here)."""
-        entry, cat = provider(pid)
-        if t.node:
-            url, kind = page_url(pid, cat, t.node), "show"
-        elif t.url.startswith("https://"):
-            url, kind = t.url, "video"
-        else:
-            raise HTTPException(400, "not a show or video of this provider")
-        thumb = ""
-        if t.thumb.startswith(THUMB):
-            try:
-                thumb = base64.urlsafe_b64decode(t.thumb.removeprefix(THUMB).encode()).decode()
-            except (ValueError, UnicodeDecodeError):
-                thumb = ""
-        if jf_id := in_jellyfin(entry).get(url):
-            try:
-                jf.set_favourite(jf_id, True)
-            except JellyfinError as e:
-                raise HTTPException(502, str(e)) from e
-            return {"key": t.node or url, "jellyfin_id": jf_id}
-        page = page_url(pid, cat, t.page) if t.page else ""
-        watchlist.add(
-            url, kind, t.title, thumb if thumb in listed else "", t.sub, page, t.here and kind == "video", pid
-        )
-        if kind == "show":  # what it has now, so later episodes count as new
-            threading.Thread(target=watchlist.check, args=(catalogs,), kwargs={"only": url}, daemon=True).start()
-        return {"key": t.node or url}
-
-    @api.delete("/api/p/{pid}/list", status_code=204)
-    def unsave(pid: str, key: str):
-        _, cat = provider(pid)
-        if not watchlist.remove(key if key.startswith("https://") else page_url(pid, cat, key)):
-            raise HTTPException(404, "not on My list")
 
     return api
 

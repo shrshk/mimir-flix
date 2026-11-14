@@ -8,7 +8,7 @@ from mimir_tv.app import create_app
 from mimir_tv.jellyfin import Jellyfin
 from mimir_tv.jf_routes import router
 from mimir_tv.kodi import Kodi
-from mimir_tv.watchlist import Watchlist
+from mimir_tv.mylist import ListDates
 from mimir_tv.resolver import start_resolver
 
 MOVIE = "a" * 32
@@ -193,12 +193,11 @@ def setup(tmp_path):
             )
         ),
     )
-    watchlist = Watchlist(tmp_path / "m.db")
     c = TestClient(
         create_app(
             jf,
             tmp_path / "picks",
-            router(jf, kodi, "https://lan.example", watchlist=watchlist, hidden=lambda: {"My IPTV"}),
+            router(jf, kodi, "https://lan.example", dates=ListDates(tmp_path / "m.db"), hidden=lambda: {"My IPTV"}),
         )
     )
     return jf, c, sent
@@ -462,7 +461,7 @@ def test_my_list_titles_in_the_library_are_jellyfin_favourites(tmp_path):
 def test_my_list_shows_the_last_favourite_first_wherever_it_was_made(tmp_path, monkeypatch):
     _, c, _ = setup(tmp_path)
     clock = iter(range(1_800_000_000, 1_800_001_000, 10))  # 2027: after the library dates
-    monkeypatch.setattr("mimir_tv.watchlist.time.time", lambda: next(clock))
+    monkeypatch.setattr("mimir_tv.mylist.time.time", lambda: next(clock))
     # Favourites from before the list noted dates: newest in the library first.
     monkeypatch.setitem(ITEMS[MOVIE], "DateCreated", "2020-01-01T00:00:00.0000000Z")
     monkeypatch.setitem(ITEMS[CLIP], "DateCreated", "2021-01-01T00:00:00Z")
@@ -474,17 +473,6 @@ def test_my_list_shows_the_last_favourite_first_wherever_it_was_made(tmp_path, m
     USER_DATA[EP1] = {"IsFavorite": True}  # made a favourite in a Jellyfin app (Wholphin): newest when seen
     listed = c.get("/api/jf/list").json()
     assert [i["id"] for i in listed] == [EP1, MOVIE, CLIP] and listed[0]["added"] > listed[1]["added"]
-
-
-def test_library_titles_on_the_old_list_become_favourites_once(tmp_path):
-    _, c, _ = setup(tmp_path)
-    old = Watchlist(tmp_path / "m.db")
-    old.add_item(f"jf:{CLIP}", "jellyfin", {"title": "Old clip"})
-    old.add_item(f"jf:{'f' * 32}", "jellyfin", {"title": "Since deleted"})
-    old.add_title({"tmdb": "movie/1", "title": "Streaming", "year": "2020"})
-    assert [i["id"] for i in c.get("/api/jf/list").json()] == [CLIP]
-    assert USER_DATA[CLIP]["IsFavorite"]
-    assert [i["url"] for i in old.items()] == ["tmdb:movie/1"]  # the other kinds stay on mimir-tv's list
 
 
 def test_play_here_keeps_jellyfins_place_and_played_state(tmp_path):

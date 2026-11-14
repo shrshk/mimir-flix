@@ -77,8 +77,8 @@ TOOLS = [
     },
     {
         "name": "whats_new",
-        "description": "New episodes: shows on My list with episodes added since they were opened, and episodes the "
-        "home library (Jellyfin) added in the last days (play those with play_on_tv jellyfin_id).",
+        "description": "New episodes the home library (Jellyfin) added in the last days (play those with play_on_tv "
+        "jellyfin_id).",
         "inputSchema": {"type": "object", "properties": {"days": {"type": "integer", "description": "default 7"}}},
     },
     {
@@ -222,38 +222,25 @@ TOOLS = [
     },
     {
         "name": "my_list",
-        "description": "The house's My list, newest first: titles in the home library (jellyfin_id), titles on the "
-        "streaming apps (tmdb, apps) and providers' shows and videos (provider, id; with new-episode counts).",
+        "description": "The house's My list, newest first: the home library's favourites (jellyfin_id). A title "
+        "not in the library can't be on it: add it to Jellyfin first.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "add_to_my_list",
-        "description": "Save to My list. Streaming titles: tmdb_ids, one or several at once (e.g. after showing "
-        "recommendations, add the ones the person chose, or all of them). Titles in the home library: jellyfin_ids "
-        "(from search's library). A provider's show or video from search: provider and id, one, with its title.",
+        "description": "Save titles in the home library to My list (a Jellyfin favourite): jellyfin_ids, one or "
+        "several (from search's library). A title not in the library can't go on it.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "tmdb_ids": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['tv/1396']"},
-                "jellyfin_ids": {"type": "array", "items": {"type": "string"}},
-                "provider": {"type": "string"},
-                "id": {"type": "string"},
-                "title": {"type": "string"},
-            },
+            "properties": {"jellyfin_ids": {"type": "array", "items": {"type": "string"}}},
         },
     },
     {
         "name": "remove_from_my_list",
-        "description": "Take a title off My list: tmdb for a streaming title, jellyfin_id for one in the home "
-        "library, provider and id for a provider's one.",
+        "description": "Take a title off My list (no longer a Jellyfin favourite): its jellyfin_id.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "tmdb": {"type": "string"},
-                "jellyfin_id": {"type": "string"},
-                "provider": {"type": "string"},
-                "id": {"type": "string"},
-            },
+            "properties": {"jellyfin_id": {"type": "string"}},
         },
     },
 ]
@@ -266,15 +253,13 @@ def lean(i: dict) -> dict:
 
 
 def my_list_args(a: dict) -> dict:
-    """The My list tools under the names a model tends to guess (a model gave up after tmdb= and a url= failed): one
-    id or a list, singular or plural; a provider's item as id, node, url or any *_url."""
-    a = item_args(a)
-    for one, many in (("tmdb", "tmdb_ids"), ("tmdb_id", "tmdb_ids"), ("jellyfin_id", "jellyfin_ids")):
-        if a.get(one) and not a.get(many):
-            a[many] = a[one] if isinstance(a[one], list) else [a[one]]
-    for one, many in (("tmdb", "tmdb_ids"), ("jellyfin_id", "jellyfin_ids")):
-        if a.get(many) and not a.get(one):
-            a[one] = a[many][0] if isinstance(a[many], list) else a[many]
+    """The My list tools under the names a model tends to guess: one id or a list, singular or plural."""
+    if a.get("jellyfin_id") and not a.get("jellyfin_ids"):
+        one = a["jellyfin_id"]
+        a = a | {"jellyfin_ids": one if isinstance(one, list) else [one]}
+    if a.get("jellyfin_ids") and not a.get("jellyfin_id"):
+        many = a["jellyfin_ids"]
+        a = a | {"jellyfin_id": many[0] if isinstance(many, list) else many}
     return a
 
 
@@ -416,16 +401,6 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
         added = await call(app, "POST", f"/api/p/{pid}/jellyfin/video", json=video | {"tv": True})
         return {"playing": video["title"], "jellyfin_id": added["id"]}
 
-    async def saved(app) -> list[dict]:
-        """Every provider's My list entries, each with provider."""
-        out = []
-        for p in await providers(app):
-            try:
-                out += [t | {"provider": p["id"]} for t in await call(app, "GET", f"/api/p/{p['id']}/list")]
-            except ToolError:
-                continue  # that provider is not answering: the rest of the list still answers
-        return out
-
     async def whats_on_tv(app) -> dict:
         if tv_now is None:
             raise ToolError("No TV set up (add one on the Settings page)")
@@ -444,13 +419,6 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
 
     async def whats_new(app, days: int) -> dict:
         out: dict[str, Any] = {}
-        listed = [
-            {"title": t["title"], "new_episodes": t["new"], "provider": t["provider"], "id": t["key"]}
-            for t in await saved(app)
-            if t.get("new")
-        ]
-        if listed:
-            out["my_list"] = listed
         try:
             out["library"] = [
                 {
@@ -566,57 +534,19 @@ def router(token: str, tv_now: Callable[[], dict] | None = None) -> APIRouter:
             added = await call(app, "POST", f"/api/p/{await which(app, a)}/jellyfin", json=body)
             return {"jellyfin_id": added["id"], "episodes": added["episodes"]}
         if name == "my_list":
-            try:
-                library = await call(app, "GET", "/api/jf/list")
-            except ToolError:
-                library = []  # no Jellyfin here: the rest of the list still answers
-            out: dict[str, Any] = {
-                "library": [{"title": t["title"], "sub": t["sub"], "jellyfin_id": t["id"]} for t in library],
-                "titles": [
-                    {"title": t["title"], "year": t["year"], "kind": t["kind"], "tmdb": t["tmdb"]}
-                    | {"apps": [x["app"] for x in t["apps"]]}
-                    for t in await call(app, "GET", "/api/list/titles")
-                ],
-            }
-            mine = await saved(app)
-            if mine:
-                out["providers"] = [
-                    {"title": t["title"], "kind": "show" if t["kind"] == "folder" else "video", "sub": t["sub"]}
-                    | {"provider": t["provider"], "id": t["key"]}
-                    | ({"new_episodes": t["new"]} if t.get("new") else {})
-                    for t in mine
-                ]
-            return out
-        if name in ("add_to_my_list", "remove_from_my_list"):
-            a = my_list_args(a)
+            library = await call(app, "GET", "/api/jf/list")
+            return {"library": [{"title": t["title"], "sub": t["sub"], "jellyfin_id": t["id"]} for t in library]}
+        a = my_list_args(a)
+        if not a.get("jellyfin_id"):
+            raise ToolError("give jellyfin_ids (from search's library); a title not in the library can't be on My list")
         if name == "remove_from_my_list":
-            if a.get("jellyfin_id"):
-                await call(app, "DELETE", "/api/jf/list", params={"id": a["jellyfin_id"]})
-            elif a.get("tmdb"):
-                await call(app, "DELETE", "/api/list/titles", params={"tmdb": a["tmdb"]})
-            elif a.get("id"):
-                await call(app, "DELETE", f"/api/p/{await which(app, a)}/list", params={"key": a["id"]})
-            else:
-                raise ToolError("give tmdb, jellyfin_id, or a provider's id")
-            return {"removed": a.get("jellyfin_id") or a.get("tmdb") or a.get("id")}
-        # add_to_my_list
-        ids, lib = a.get("tmdb_ids"), a.get("jellyfin_ids")
-        ids = [ids] if isinstance(ids, str) else ids
-        lib = [lib] if isinstance(lib, str) else lib
-        if ids or lib:
-            out = {"added": [], "already": []}
-            for jid in lib or []:
-                got = await call(app, "POST", "/api/jf/list", json={"id": jid})
-                out = {k: out[k] + got[k] for k in out}
-            if ids:
-                got = await call(app, "POST", "/api/list/titles", json={"tmdb": ids})
-                out = {k: out[k] + got[k] for k in out}
-            return out
-        if not a.get("title") or not a.get("id"):
-            raise ToolError("give tmdb_ids (e.g. ['movie/1511417']) or jellyfin_ids, or a provider's id with its title")
-        video = a["id"].startswith("https://")
-        body = {"node": "" if video else a["id"], "url": a["id"] if video else "", "title": a["title"]}
-        return await call(app, "POST", f"/api/p/{await which(app, a)}/list", json=body)
+            await call(app, "DELETE", "/api/jf/list", params={"id": a["jellyfin_id"]})
+            return {"removed": a["jellyfin_id"]}
+        out = {"added": [], "already": []}
+        for jid in a["jellyfin_ids"]:
+            got = await call(app, "POST", "/api/jf/list", json={"id": jid})
+            out = {k: out[k] + got[k] for k in out}
+        return out
 
     def answer(id_, result=None, error: tuple[int, str] | None = None) -> JSONResponse:
         body = {"jsonrpc": "2.0", "id": id_}

@@ -115,8 +115,9 @@ are files readable by you only.
 - **For you**: recommendations by category (Buzzing now, Worth the hype, Skip the hype, Crowd favourites, Hidden
   gems, New on your apps) from TMDB, narrowed to your apps (or any, or some), a language, a genre, movies or shows;
   what was watched in Jellyfin is left out. A row on Home; the assistant's `recommend` tool uses the same.
-- **My list**: ＋ My list on any title (your library, a streaming app or a provider). Titles in your library are
-  Jellyfin favourites, so every Jellyfin app shows the same ones; a provider's shows on it count their new episodes. 👍 / 👎 on a streaming title steer recommendations (👎 leaves it out everywhere).
+- **My list**: your Jellyfin favourites, newest first, so every Jellyfin app shows the same list. ＋ My list on any
+  title in your library; a title elsewhere goes into Jellyfin first. 👍 / 👎 on a streaming title steer
+  recommendations (👎 leaves it out everywhere).
 - **Library**: libraries, folders (everything under a folder is included), excluded subfolders (an empty
   `.ignore` file, which Jellyfin skips), single videos (linked into the library's picks folder), and live scan status.
 - **Jobs and backups**: `/jobs` lists the scheduled jobs (nightly backup, new episodes, each provider's own) with
@@ -129,7 +130,7 @@ are files readable by you only.
   candidates, find_titles, similar_to, title_details and feedback (👍/👎). mimir-tv has no model: the assistant
   does the judging and shows its picks in its own chat, and writes to mimir-tv only when you say so (My list,
   👍/👎). A ready-made OpenClaw skill for daily picks is in mimir-claw. A provider's titles come with `provider`
-  and `id`, which play_on_tv, add_to_jellyfin and My list take back. live_now asks each provider that has live
+  and `id`, which play_on_tv and add_to_jellyfin take back; My list takes `jellyfin_id`s. live_now asks each provider that has live
   streams for the one showing a match now ("Arsenal"). It needs the bearer token in `~/.config/mimir-tv/mcp-token`
   (made on first start, owner-only). Through Caddy, only Tailscale addresses get in. Example client entry:
   `{"url": "http://127.0.0.1:8723/mcp", "headers": {"Authorization": "Bearer <the token>"}}`.
@@ -169,7 +170,7 @@ tailnet); the plugin checks its own login.
 
 There is no guide unless the provider has one. Kodi on a Fire TV is set up the same way.
 
-Each provider gets its own section on Home, search results, My list entries, jobs (`<id>-<job>` on the jobs page)
+Each provider gets its own section on Home, search results, jobs (`<id>-<job>` on the jobs page)
 and three Jellyfin libraries named after it (`<name>`, `<name> Movies`, `<name> Live`).
 
 ### How a provider's links play

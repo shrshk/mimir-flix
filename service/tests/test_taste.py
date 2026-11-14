@@ -1,5 +1,4 @@
 import json
-import sqlite3
 
 import httpx
 from fastapi import FastAPI
@@ -12,8 +11,6 @@ from mimir_tv.recs import router as recs_router
 from mimir_tv.streaming import Streaming, pick
 from mimir_tv.taste import Taste
 from mimir_tv.taste import router as taste_router
-from mimir_tv.watchlist import Watchlist
-from mimir_tv.watchlist import router as list_router
 
 
 def hit(i, title, lang, genres, votes=500):
@@ -106,7 +103,7 @@ def setup(tmp_path, rules=None):
     taste = Taste(db, recs, jf)
     taste.played_titles = lambda: {p["title"].lower() for p in taste.played()}
     app = FastAPI()
-    for r in (recs_router(recs), taste_router(taste), list_router(Watchlist(db), recs.details), mcp_router("t")):
+    for r in (recs_router(recs), taste_router(taste), mcp_router("t")):
         app.include_router(r)
     return TestClient(app)
 
@@ -150,46 +147,10 @@ def test_an_assistant_reads_the_taste_and_ranks_the_pool(tmp_path):
     assert [i["title"] for i in tool(c, "candidates")] == ["Tandel"]
 
 
-def test_the_chosen_recommendations_go_to_my_list_in_one_go(tmp_path):
-    c = setup(tmp_path)
-    added = tool(c, "add_to_my_list", tmdb_ids=["movie/1", "tv/1399"])
-    assert added == {"added": ["Tandel", "1899"], "already": []}
-    assert tool(c, "add_to_my_list", tmdb_ids=["movie/1"]) == {"added": [], "already": ["Tandel"]}
-    listed = tool(c, "my_list")["titles"]
-    assert {(t["title"], t["kind"], tuple(t["apps"])) for t in listed} == {
-        ("Tandel", "movie", ("netflix",)),
-        ("1899", "show", ("netflix",)),
-    }
-    assert tool(c, "remove_from_my_list", tmdb="tv/1399") == {"removed": "tv/1399"}
-    assert [t["title"] for t in tool(c, "my_list")["titles"]] == ["Tandel"]
-    assert tool(c, "add_to_my_list", tmdb_ids=["movie/999"])[1] is True  # TMDB has no such title
-
-
-def test_my_list_takes_the_names_a_model_guesses(tmp_path):
-    # 2026-11-02: a model called add_to_my_list with tmdb="movie/…" (not tmdb_ids) and gave up on the error.
-    c = setup(tmp_path)
-    assert tool(c, "add_to_my_list", tmdb="movie/1", title="Tandel", app="netflix") == {
-        "added": ["Tandel"],
-        "already": [],
-    }
-    assert tool(c, "remove_from_my_list", tmdb_ids=["movie/1"]) == {"removed": "movie/1"}
-    text, failed = tool(c, "add_to_my_list", title="Tandel")
-    assert failed and "tmdb_ids" in text and "provider's id" in text  # the error names the arguments to use
-
-
-def test_a_list_from_before_streaming_titles_keeps_its_entries(tmp_path):
-    db = tmp_path / "old.db"
-    old = sqlite3.connect(db)
-    old.execute(
-        "CREATE TABLE watchlist (url TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, thumb TEXT NOT NULL"
-        " DEFAULT '', sub TEXT NOT NULL DEFAULT '', page TEXT NOT NULL DEFAULT '', here INTEGER NOT NULL DEFAULT 0,"
-        " added REAL NOT NULL, episodes TEXT, new INTEGER NOT NULL DEFAULT 0)"
-    )
-    old.execute("INSERT INTO watchlist (url, kind, title, added) VALUES ('https://x/show', 'show', 'Old show', 1)")
-    old.commit()
-    w = Watchlist(db)
-    assert w.add_title({"tmdb": "movie/1", "title": "Tandel", "thumb": "", "year": "2026"}) is True
-    assert [i["title"] for i in w.items()] == ["Tandel", "Old show"] and w.titles()[0]["tmdb"] == "movie/1"
+def test_a_streaming_title_cant_go_on_my_list_and_the_error_says_what_can(tmp_path):
+    # Picks not in the library stay with the assistant (mimir-claw keeps them); My list is Jellyfin favourites.
+    text, failed = tool(setup(tmp_path), "add_to_my_list", tmdb_ids=["movie/1"])
+    assert failed and "jellyfin_ids" in text and "not in the library" in text
 
 
 def test_reviewed_titles_are_found_in_one_call_and_the_pool_leaves_thin_ones_out(tmp_path):

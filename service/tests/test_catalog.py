@@ -33,8 +33,6 @@ from mimir_tv.providers import router as providers_router
 from mimir_tv.resolver import start_resolver
 from mimir_tv.strm import add, follow, followed, refresh_shows, show_folder, write_movie, write_show
 from mimir_tv.vault import Vault
-from mimir_tv.watchlist import Watchlist
-from mimir_tv.watchlist import router as list_router
 from tests.test_library import FakeJellyfin
 
 SITE = "https://cat.example"
@@ -409,55 +407,6 @@ def test_files_already_there_are_left_alone(tmp_path):
     assert target.stat().st_mtime == 1 and "p=" not in target.read_text()
 
 
-def test_my_list_saves_pointers_and_marks_new_episodes(home, cat, tmp_path):
-    jf = FakeJellyfin()
-    jellyfin = Jellyfin("http://jf", "key", transport=httpx.MockTransport(jf.handler))
-    wl = Watchlist(tmp_path / "mimir-tv.db")
-    c = app(home, tmp_path, jellyfin, watchlist=wl)
-    dark = c.get("/api/p/tv1/browse", params={"node": node_id("tv1", SECTIONS["Shows"])}).json()["items"][0]
-
-    # A show and a video: only a pointer is kept; nothing goes into Jellyfin or onto the drive.
-    body = {"node": dark["node"], "title": "Dark", "thumb": dark["thumb"]}
-    assert c.post("/api/p/tv1/list", json=body).json() == {"key": dark["node"]}
-    c.post("/api/p/tv1/list", json={"url": MOVIE, "title": "Heat (1995)", "thumb": "/api/thumb?u=bad"})
-    assert c.post("/api/p/tv1/list", json={"url": "file:///etc/passwd", "title": "x"}).status_code == 400
-    assert jf.libs == {} and not (tmp_path / "media").exists()
-    wl.check(home, only=SHOW)  # what the show has when saved (the route does this in the background)
-    saved = c.get("/api/p/tv1/list").json()
-    assert [(i["title"], i["kind"], i["key"], i["new"], i["p"]) for i in saved] == [
-        ("Heat (1995)", "video", MOVIE, 0, "tv1"),
-        ("Dark", "folder", dark["node"], 0, "tv1"),
-    ]
-    assert saved[0]["thumb"] == "" and saved[1]["thumb"] == dark["thumb"]  # only a thumbnail it listed is kept
-
-    # The hourly check: a new episode drops; the list says so until the show is opened.
-    cat.pages[S2] = [video("Episode 2. New", EP.format(s=2, e=2)), *cat.pages[S2]]
-    assert wl.check(home, ttl=0) == 1 and wl.check(home, ttl=0) == 0
-    assert {i["title"]: i["new"] for i in c.get("/api/p/tv1/list").json()}["Dark"] == 1
-    c.get("/api/p/tv1/browse", params={"node": dark["node"]})
-    assert {i["title"]: i["new"] for i in c.get("/api/p/tv1/list").json()}["Dark"] == 0
-
-    # An entry saved before providers had ids belongs to the first provider.
-    wl.add(f"{SITE}/shows/old", "show", "Old show")
-    assert "Old show" in [i["title"] for i in c.get("/api/p/tv1/list").json()]
-
-    # Saving again keeps it once; removing is one call by the same key.
-    c.post("/api/p/tv1/list", json={"url": MOVIE, "title": "Heat (1995)"})
-    assert len(c.get("/api/p/tv1/list").json()) == 3
-    assert c.delete("/api/p/tv1/list", params={"key": MOVIE}).status_code == 204
-    assert c.delete("/api/p/tv1/list", params={"key": dark["node"]}).status_code == 204
-    assert c.delete("/api/p/tv1/list", params={"key": MOVIE}).status_code == 404
-
-    # A title Jellyfin has is a Jellyfin favourite, like anything in the library: no copy stays on this list.
-    c.post("/api/p/tv1/list", json={"url": MOVIE, "title": "Heat (1995)"})
-    c.post("/api/p/tv1/jellyfin/video", json={"url": MOVIE, "title": "Heat (1995)"})  # added after it was listed
-    assert "Heat (1995)" not in [i["title"] for i in c.get("/api/p/tv1/list").json()]
-    assert jf.favourites == {"strm:Heat (1995)"} and MOVIE not in [i["url"] for i in wl.items()]
-    c.post("/api/p/tv1/jellyfin", json={"node": dark["node"], "title": "Dark"})
-    assert c.post("/api/p/tv1/list", json=body).json() == {"key": dark["node"], "jellyfin_id": "series:Dark"}
-    assert "series:Dark" in jf.favourites and [i["title"] for i in wl.items()] == ["Old show"]
-
-
 def test_hourly_jobs_record_each_run_under_the_providers_id(home, cat, tmp_path):
     root = tmp_path / "media" / "tv1"
     write_show(cat, "tv1", SHOW, "Dark", root, "http://air:8724")
@@ -546,13 +495,10 @@ def test_without_a_plugin_installed_its_provider_is_left_out(tmp_path, home):
 def test_the_assistant_searches_plays_and_saves_a_providers_titles(home, cat, tmp_path):
     jf = FakeJellyfin()
     jellyfin = Jellyfin("http://jf", "key", transport=httpx.MockTransport(jf.handler))
-    wl = Watchlist(tmp_path / "mimir-tv.db")
-    routes = router(home, jellyfin, None, tmp_path / "media", "http://air:8724", tmp_path / "thumbs", watchlist=wl)
+    routes = router(home, jellyfin, None, tmp_path / "media", "http://air:8724", tmp_path / "thumbs")
     connectors = {"providers": lambda: listing(home)}
     jf_routes = jf_router(jellyfin, None, "http://air:8724")
-    a = create_app(
-        jellyfin, tmp_path / "picks", routes, jf_routes, list_router(wl, dict), mcp_router("t"), connectors=connectors
-    )
+    a = create_app(jellyfin, tmp_path / "picks", routes, jf_routes, mcp_router("t"), connectors=connectors)
     c = TestClient(a, client=("127.0.0.1", 5000))
 
     def tool(name, **args):
@@ -585,14 +531,9 @@ def test_the_assistant_searches_plays_and_saves_a_providers_titles(home, cat, tm
     played = tool("play_on_tv", provider="tv1", id=live[0]["id"], page=live[0]["page"], title="Sports 1")
     assert played == {"playing": "Sports 1", "jellyfin_id": "strm:Sports 1"} and jf.played == ["strm:Sports 1"]
 
-    # My list: by provider and id; an older argument name (url, or no provider) still lands.
-    # Dark is in Jellyfin (added above): a Jellyfin favourite, so it lists with the library, not here.
-    added = tool("add_to_my_list", provider="tv1", id=show["id"], title="Dark")
-    assert added == {"key": show["id"], "jellyfin_id": "series:Dark"} and jf.favourites == {"series:Dark"}
-    assert tool("add_to_my_list", url=MOVIE, title="Heat") == {"key": MOVIE}
-    mine = tool("my_list")["providers"]
-    assert {(t["title"], t["kind"], t["provider"], t["id"]) for t in mine} == {("Heat", "video", "tv1", MOVIE)}
-    assert tool("remove_from_my_list", provider="tv1", id=MOVIE) == {"removed": MOVIE}
+    # My list is Jellyfin favourites: a provider's title goes into Jellyfin first (add_to_jellyfin, above).
+    text, failed = tool("add_to_my_list", provider="tv1", id=MOVIE, title="Heat")
+    assert failed and "jellyfin_ids" in text
 
 
 def trusted(request: Request) -> None:
